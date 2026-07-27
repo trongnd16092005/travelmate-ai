@@ -1,0 +1,36 @@
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# Editors and operating systems
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# JavaScript
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+# Leftover asset from the initial Vite generator; not used by the React app.
+apps/web/src/assets/hero.png
+
+# Java
+target/
+*.class
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# Logs and local runtime data
+*.log
+logs/
+tmp/

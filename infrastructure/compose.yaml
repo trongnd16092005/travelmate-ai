@@ -1,0 +1,59 @@
+name: travelmate
+
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-travelmate}
+      MYSQL_USER: ${MYSQL_USER:-travelmate}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-travelmate}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-travelmate-root}
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  ai-service:
+    build:
+      context: ../services/ai-service
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      CORE_API_URL: http://core-api:8080
+      LLM_PROVIDER: ${LLM_PROVIDER:-mock}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    ports:
+      - "8000:8000"
+
+  core-api:
+    build:
+      context: ../services/core-api
+    environment:
+      DB_URL: jdbc:mysql://mysql:3306/${MYSQL_DATABASE:-travelmate}?useSSL=false&allowPublicKeyRetrieval=true
+      DB_USERNAME: ${MYSQL_USER:-travelmate}
+      DB_PASSWORD: ${MYSQL_PASSWORD:-travelmate}
+      AI_SERVICE_URL: http://ai-service:8000
+    ports:
+      - "8080:8080"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      ai-service:
+        condition: service_started
+
+  web:
+    build:
+      context: ../apps/web
+    ports:
+      - "3000:80"
+    depends_on:
+      - core-api
+
+volumes:
+  mysql-data:
+
