@@ -1,6 +1,6 @@
 # Integration Contracts
 
-Nơi lưu các hợp đồng giao tiếp dùng chung giữa web, core API và AI service.
+Nơi lưu các hợp đồng giao tiếp dùng chung giữa mobile, core API và AI service.
 
 Nội dung dự kiến:
 
@@ -14,4 +14,3 @@ contracts/
 
 Mọi thay đổi làm ảnh hưởng cấu trúc request hoặc response phải được cập nhật
 tại đây trước khi tích hợp.
-

@@ -46,14 +46,5 @@ services:
       ai-service:
         condition: service_started
 
-  web:
-    build:
-      context: ../apps/web
-    ports:
-      - "3000:80"
-    depends_on:
-      - core-api
-
 volumes:
   mysql-data:
-

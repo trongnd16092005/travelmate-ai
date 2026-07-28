@@ -14,8 +14,6 @@ node_modules/
 dist/
 coverage/
 *.tsbuildinfo
-# Leftover asset from the initial Vite generator; not used by the React app.
-apps/web/src/assets/hero.png
 
 # Java
 target/
