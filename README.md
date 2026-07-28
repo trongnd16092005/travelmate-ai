@@ -7,30 +7,30 @@ TravelMate AI là hệ thống hỗ trợ lập kế hoạch và tư vấn du l�
 ```text
 .
 ├── apps/
-│   └── web/                  # Ứng dụng web React
+│   └── mobile/               # Ứng dụng React Native bằng Expo
 ├── services/
 │   ├── core-api/             # REST API chính bằng Spring Boot
 │   └── ai-service/           # Dịch vụ AI độc lập bằng FastAPI
 ├── packages/
 │   └── contracts/            # OpenAPI, JSON Schema và dữ liệu mẫu dùng chung
-├── infrastructure/           # Docker Compose, Nginx và cấu hình triển khai
+├── infrastructure/           # Docker Compose và cấu hình triển khai
 └── PTTKHT/                   # Tài liệu phân tích và thiết kế hệ thống
 ```
 
 ## Luồng giao tiếp
 
 ```text
-apps/web → services/core-api → services/ai-service → LLM provider
-                    ↓
-                  MySQL
+apps/mobile → services/core-api → services/ai-service → LLM provider
+                        ↓
+                      MySQL
 ```
 
-Ứng dụng web chỉ gọi `core-api`. API chính chịu trách nhiệm xác thực, phân
+Ứng dụng mobile chỉ gọi `core-api`. API chính chịu trách nhiệm xác thực, phân
 quyền, truy cập cơ sở dữ liệu và chuyển ngữ cảnh cần thiết sang `ai-service`.
 
 ## Bắt đầu nhanh
 
-### Chạy bằng Docker
+### Chạy backend bằng Docker
 
 ```powershell
 Copy-Item .env.example .env
@@ -39,13 +39,18 @@ docker compose --env-file .env -f infrastructure/compose.yaml up --build
 
 ### Chạy từng thành phần để phát triển
 
-Web:
+Mobile:
 
 ```powershell
-Set-Location apps/web
+Set-Location apps/mobile
+Copy-Item .env.example .env
 npm install
-npm run dev
+npm start
 ```
+
+Ứng dụng sử dụng Expo SDK 57 và yêu cầu Node.js 22.13 trở lên. Khi chạy trên
+điện thoại thật, `EXPO_PUBLIC_API_URL` phải dùng IP LAN của máy chạy backend,
+không dùng `localhost`.
 
 Core API:
 
@@ -99,13 +104,13 @@ Sau khi hoàn thành:
 
 ```powershell
 git add .
-git commit -m "feat(scope): mo ta ngan gon"
+git commit -m "Tạo màn hình đăng nhập"
 git push -u origin feature/ten-chuc-nang
 ```
 
 Sau đó tạo Pull Request từ `feature/*` vào `develop`. Chỉ tạo Pull Request
-từ `develop` vào `main` khi web build thành công, backend và AI vượt qua test,
-luồng tích hợp hoạt động và không có secret trong thay đổi.
+từ `develop` vào `main` khi mobile vượt qua lint và typecheck, backend và AI
+vượt qua test, luồng tích hợp hoạt động và không có secret trong thay đổi.
 
 ### Quy tắc dành cho AI hỗ trợ lập trình
 
