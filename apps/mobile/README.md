@@ -30,6 +30,23 @@ EXPO_PUBLIC_AI_SERVICE_URL=http://IP_LAN_CUA_MAY:8000/internal/v1
 Khởi động FastAPI trước khi gửi tin nhắn. Kết nối trực tiếp này chỉ dành cho
 phát triển; bản tích hợp chính thức sẽ gọi AI thông qua Core API.
 
+## Demo trên laptop
+
+Đặt URL AI Service trong `.env` về localhost:
+
+```env
+EXPO_PUBLIC_AI_SERVICE_URL=http://localhost:8000/internal/v1
+```
+
+Sau khi FastAPI đã chạy ở cổng `8000`, mở một terminal khác:
+
+```powershell
+npm run web
+```
+
+Expo sẽ mở ứng dụng trong trình duyệt. Tab AI dùng cùng source với bản mobile,
+nhưng phần nội dung được giới hạn chiều rộng để trình chiếu trên laptop.
+
 ## Development build
 
 ```powershell

@@ -120,7 +120,7 @@ export default function AiScreen() {
         style={styles.container}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}>
-        <View style={styles.header}>
+        <View style={[styles.header, styles.desktopContent]}>
           <View>
             <Text style={styles.eyebrow}>TRAVELMATE LAB</Text>
             <Text style={styles.title}>Thử chatbot</Text>
@@ -171,6 +171,7 @@ export default function AiScreen() {
 
         <FlatList
           ref={listRef}
+          style={styles.desktopContent}
           data={messages}
           keyExtractor={(item) => item.id}
           renderItem={({ item }) => <ChatBubble message={item} />}
@@ -187,7 +188,7 @@ export default function AiScreen() {
           }
         />
 
-        <View style={styles.composerArea}>
+        <View style={[styles.composerArea, styles.desktopContent]}>
           {errorMessage && (
             <View style={styles.errorBox}>
               <Text style={styles.errorText}>{errorMessage}</Text>
@@ -248,6 +249,11 @@ const styles = StyleSheet.create({
   },
   container: {
     flex: 1,
+  },
+  desktopContent: {
+    width: '100%',
+    maxWidth: 920,
+    alignSelf: 'center',
   },
   header: {
     flexDirection: 'row',
