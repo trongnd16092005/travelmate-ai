@@ -1,4 +1,5 @@
 from functools import lru_cache
+from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -9,7 +10,12 @@ class Settings(BaseSettings):
     app_host: str = "0.0.0.0"
     app_port: int = 8000
     core_api_url: str = "http://localhost:8080"
-    llm_provider: str = "mock"
+    llm_provider: Literal["mock", "local"] = "mock"
+    local_model_id: str = "Qwen/Qwen3-4B"
+    local_adapter_path: str = "artifacts/travelmate-qwen3-4b-lora"
+    local_model_device: str = "auto"
+    local_model_load_in_4bit: bool = False
+    local_model_max_new_tokens: int = 512
     gemini_api_key: str = ""
     openai_api_key: str = ""
 
@@ -26,4 +32,3 @@ def get_settings() -> Settings:
 
 
 settings = get_settings()
-

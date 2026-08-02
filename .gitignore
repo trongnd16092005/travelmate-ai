@@ -32,3 +32,8 @@ __pycache__/
 *.log
 logs/
 tmp/
+
+# Local AI models and training outputs
+artifacts/
+checkpoints/
+*.safetensors
