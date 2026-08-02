@@ -39,6 +39,22 @@ async def test_chat_endpoint_uses_mock_provider() -> None:
     assert len(body["suggestedQuestions"]) == 3
 
 
+@pytest.mark.asyncio
+async def test_chat_endpoint_accepts_expo_web_origin() -> None:
+    transport = ASGITransport(app=app)
+    headers = {
+        "Origin": "http://localhost:8081",
+        "Access-Control-Request-Method": "POST",
+        "Access-Control-Request-Headers": "content-type",
+    }
+
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.options("/internal/v1/ai/chat", headers=headers)
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://localhost:8081"
+
+
 def test_chat_service_injects_trip_context_and_history() -> None:
     model = CapturingChatModel()
     service = ChatService(model, "mock")

@@ -10,6 +10,9 @@ class Settings(BaseSettings):
     app_host: str = "0.0.0.0"
     app_port: int = 8000
     core_api_url: str = "http://localhost:8080"
+    cors_origins: str = (
+        "http://localhost:8081,http://127.0.0.1:8081,http://localhost:19006,http://127.0.0.1:19006"
+    )
     llm_provider: Literal["mock", "local"] = "mock"
     local_model_id: str = "Qwen/Qwen3-4B"
     local_adapter_path: str = "artifacts/travelmate-qwen3-4b-lora"
@@ -24,6 +27,10 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore",
     )
+
+    @property
+    def cors_origin_list(self) -> list[str]:
+        return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
 
 
 @lru_cache
