@@ -28,7 +28,7 @@ local-llm = [
 ]
 training = [
   "accelerate>=1.8,<2.0",
-  "bitsandbytes>=0.46,<1.0; platform_system == 'Linux'",
+  "bitsandbytes>=0.46,<1.0",
   "datasets>=4.0,<5.0",
   "peft>=0.17,<1.0",
   "torch>=2.7,<3.0",

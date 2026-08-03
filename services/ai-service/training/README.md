@@ -55,7 +55,7 @@ dữ liệu thời gian thực, giới hạn giao dịch và nội dung ngoài p
 
 ## 2. Dry-run và train QLoRA
 
-Cài dependency trên môi trường Linux có GPU:
+Cài dependency:
 
 ```bash
 python -m pip install -e ".[training]"
@@ -69,6 +69,22 @@ python -m training.train_qlora \
   --eval-dataset training/data/processed/validation.jsonl \
   --output-dir artifacts/travelmate-qwen3-4b-lora \
   --dry-run
+```
+
+Smoke test 1 epoch trên CPU dùng kiến trúc Qwen3 cực nhỏ khởi tạo ngẫu nhiên.
+Lệnh này kiểm tra tokenizer, LoRA, `SFTTrainer`, Train/Validation và việc lưu
+adapter; metric sinh ra không đại diện cho chất lượng mô hình:
+
+```bash
+python -m training.train_qlora \
+  --train-dataset training/data/processed/train.jsonl \
+  --eval-dataset training/data/processed/validation.jsonl \
+  --output-dir artifacts/smoke-qwen3-tiny-lora \
+  --model-id Qwen/Qwen3-0.6B \
+  --epochs 1 \
+  --max-length 128 \
+  --gradient-accumulation-steps 1 \
+  --smoke-test
 ```
 
 Train adapter:

@@ -18,6 +18,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--gradient-accumulation-steps", type=int, default=8)
     parser.add_argument("--resume-from-checkpoint", action="store_true")
     parser.add_argument(
+        "--smoke-test",
+        action="store_true",
+        help="Chạy model Qwen3 cực nhỏ ngẫu nhiên trên CPU để kiểm tra toàn bộ pipeline.",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Chỉ kiểm tra dữ liệu và cấu hình, không tải model hoặc dùng GPU.",
@@ -50,6 +55,10 @@ def to_prompt_completion(example: dict[str, Any]) -> dict[str, Any]:
 
 
 def build_run_summary(args: argparse.Namespace, train_size: int, eval_size: int) -> dict[str, Any]:
+    estimated_steps = max(
+        1,
+        round(train_size * args.epochs / args.gradient_accumulation_steps),
+    )
     return {
         "modelId": args.model_id,
         "trainDataset": str(args.train_dataset),
@@ -60,6 +69,8 @@ def build_run_summary(args: argparse.Namespace, train_size: int, eval_size: int)
         "maxLength": args.max_length,
         "learningRate": args.learning_rate,
         "gradientAccumulationSteps": args.gradient_accumulation_steps,
+        "warmupSteps": max(1, round(estimated_steps * 0.05)),
+        "smokeTest": args.smoke_test,
         "outputDir": str(args.output_dir),
     }
 
@@ -79,29 +90,47 @@ def main() -> None:
     from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
     from trl import SFTConfig, SFTTrainer
 
-    if not torch.cuda.is_available():
+    if not args.smoke_test and not torch.cuda.is_available():
         raise SystemExit("QLoRA cần GPU NVIDIA. Hãy chạy script trên Google Colab hoặc Kaggle.")
 
-    use_bf16 = torch.cuda.is_bf16_supported()
+    use_bf16 = not args.smoke_test and torch.cuda.is_bf16_supported()
     compute_dtype = torch.bfloat16 if use_bf16 else torch.float16
-    quantization = BitsAndBytesConfig(
-        load_in_4bit=True,
-        bnb_4bit_quant_type="nf4",
-        bnb_4bit_compute_dtype=compute_dtype,
-        bnb_4bit_use_double_quant=True,
-    )
 
     tokenizer = AutoTokenizer.from_pretrained(args.model_id)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
     tokenizer.padding_side = "right"
 
-    model = AutoModelForCausalLM.from_pretrained(
-        args.model_id,
-        device_map="auto",
-        torch_dtype=compute_dtype,
-        quantization_config=quantization,
-    )
+    if args.smoke_test:
+        from transformers import Qwen3Config, Qwen3ForCausalLM
+
+        smoke_config = Qwen3Config(
+            vocab_size=len(tokenizer),
+            hidden_size=64,
+            intermediate_size=128,
+            num_hidden_layers=2,
+            num_attention_heads=4,
+            num_key_value_heads=2,
+            head_dim=16,
+            max_position_embeddings=max(args.max_length, 128),
+            tie_word_embeddings=True,
+            pad_token_id=tokenizer.pad_token_id,
+            eos_token_id=tokenizer.eos_token_id,
+        )
+        model = Qwen3ForCausalLM(smoke_config)
+    else:
+        quantization = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_quant_type="nf4",
+            bnb_4bit_compute_dtype=compute_dtype,
+            bnb_4bit_use_double_quant=True,
+        )
+        model = AutoModelForCausalLM.from_pretrained(
+            args.model_id,
+            device_map="auto",
+            torch_dtype=compute_dtype,
+            quantization_config=quantization,
+        )
     model.config.use_cache = False
 
     raw_dataset = load_dataset(
@@ -136,18 +165,18 @@ def main() -> None:
         gradient_accumulation_steps=args.gradient_accumulation_steps,
         learning_rate=args.learning_rate,
         lr_scheduler_type="cosine",
-        warmup_ratio=0.05,
+        warmup_steps=run_summary["warmupSteps"],
         max_length=args.max_length,
         completion_only_loss=True,
         logging_steps=5,
         eval_strategy="epoch",
         save_strategy="epoch",
         save_total_limit=2,
-        gradient_checkpointing=True,
-        gradient_checkpointing_kwargs={"use_reentrant": False},
+        gradient_checkpointing=not args.smoke_test,
+        gradient_checkpointing_kwargs=({"use_reentrant": False} if not args.smoke_test else None),
         bf16=use_bf16,
-        fp16=not use_bf16,
-        optim="paged_adamw_8bit",
+        fp16=not use_bf16 and not args.smoke_test,
+        optim="adamw_torch" if args.smoke_test else "paged_adamw_8bit",
         report_to="none",
         seed=42,
     )
