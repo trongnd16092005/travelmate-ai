@@ -37,3 +37,5 @@ tmp/
 artifacts/
 checkpoints/
 *.safetensors
+services/ai-service/training/data/processed/
+services/ai-service/training/outputs/

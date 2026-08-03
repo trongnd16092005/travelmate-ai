@@ -7,8 +7,15 @@ from typing import Any
 ALLOWED_ROLES = {"system", "user", "assistant"}
 
 
-def validate_record(record: dict[str, Any], line_number: int) -> list[str]:
+def validate_record(
+    record: dict[str, Any], line_number: int, require_metadata: bool = False
+) -> list[str]:
     errors: list[str] = []
+    if require_metadata:
+        if not isinstance(record.get("id"), str) or not record["id"].strip():
+            errors.append(f"Dòng {line_number}: id phải là chuỗi không rỗng")
+        if not isinstance(record.get("category"), str) or not record["category"].strip():
+            errors.append(f"Dòng {line_number}: category phải là chuỗi không rỗng")
     messages = record.get("messages")
     if not isinstance(messages, list) or not messages:
         return [f"Dòng {line_number}: messages phải là danh sách không rỗng"]
@@ -34,7 +41,9 @@ def validate_record(record: dict[str, Any], line_number: int) -> list[str]:
     return errors
 
 
-def load_and_validate(path: Path) -> tuple[list[dict[str, Any]], list[str]]:
+def load_and_validate(
+    path: Path, require_metadata: bool = False
+) -> tuple[list[dict[str, Any]], list[str]]:
     records: list[dict[str, Any]] = []
     errors: list[str] = []
     with path.open(encoding="utf-8") as dataset_file:
@@ -50,7 +59,7 @@ def load_and_validate(path: Path) -> tuple[list[dict[str, Any]], list[str]]:
                 errors.append(f"Dòng {line_number}: bản ghi phải là object")
                 continue
             records.append(record)
-            errors.extend(validate_record(record, line_number))
+            errors.extend(validate_record(record, line_number, require_metadata))
     return records, errors
 
 
@@ -58,9 +67,10 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Kiểm tra dataset hội thoại TravelMate")
     parser.add_argument("dataset", type=Path)
     parser.add_argument("--minimum-records", type=int, default=20)
+    parser.add_argument("--require-metadata", action="store_true")
     args = parser.parse_args()
 
-    records, errors = load_and_validate(args.dataset)
+    records, errors = load_and_validate(args.dataset, args.require_metadata)
     if len(records) < args.minimum_records:
         errors.append(
             f"Dataset có {len(records)} bản ghi, cần ít nhất {args.minimum_records} bản ghi"
@@ -76,12 +86,25 @@ def main() -> None:
     if duplicates:
         errors.append(f"Có {len(duplicates)} câu user bị trùng hoàn toàn")
 
+    ids = [record.get("id") for record in records if isinstance(record.get("id"), str)]
+    duplicate_ids = [record_id for record_id, count in Counter(ids).items() if count > 1]
+    if duplicate_ids:
+        errors.append(f"Có {len(duplicate_ids)} id bị trùng")
+
     if errors:
         for error in errors:
             print(f"[LOI] {error}")
         raise SystemExit(1)
 
+    categories = Counter(
+        record.get("category", "chưa_gán")
+        for record in records
+        if isinstance(record.get("category", "chưa_gán"), str)
+    )
     print(f"Dataset hợp lệ: {len(records)} hội thoại, {len(user_prompts)} câu user")
+    print("Phân bố chủ đề:")
+    for category, count in sorted(categories.items()):
+        print(f"- {category}: {count}")
 
 
 if __name__ == "__main__":
