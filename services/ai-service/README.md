@@ -1,8 +1,8 @@
 # TravelMate AI Service
 
-Dịch vụ FastAPI phụ trách chatbot và các tính năng AI. Chatbot hỗ trợ hai chế
-độ: `mock` để tích hợp không cần tải model và `local` để chạy Qwen3-4B cùng
-LoRA adapter đã fine-tune.
+Dịch vụ FastAPI phụ trách chatbot và các tính năng AI. Chatbot hỗ trợ `mock`
+để kiểm tra tích hợp, `gemini` để demo qua Gemini API và `local` để chạy
+Qwen3-4B cùng LoRA adapter đã fine-tune.
 
 ## Thiết lập local
 
@@ -32,6 +32,25 @@ Ví dụ request:
   }
 }
 ```
+
+## Demo bằng Gemini
+
+Tạo API key trong Google AI Studio, sau đó sao chép file cấu hình:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+Chỉnh hai dòng sau trong `.env`:
+
+```dotenv
+LLM_PROVIDER=gemini
+GEMINI_API_KEY=your-api-key
+```
+
+Không đưa file `.env` hoặc API key vào Git. Khởi động lại FastAPI sau khi đổi
+cấu hình. Model mặc định là `gemini-2.5-flash`; có thể đổi bằng
+`GEMINI_MODEL`.
 
 ## Chạy mô hình local
 

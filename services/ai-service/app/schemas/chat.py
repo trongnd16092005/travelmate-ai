@@ -36,4 +36,4 @@ class ChatResponse(ApiModel):
     reply: str
     is_out_of_scope: bool
     suggested_questions: list[str] = Field(default_factory=list, max_length=3)
-    provider: Literal["mock", "local"]
+    provider: Literal["mock", "gemini", "local"]

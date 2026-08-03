@@ -78,6 +78,7 @@ export default function AiScreen() {
   });
 
   const providerLabel = useMemo(() => {
+    if (provider === 'gemini') return 'Gemini API';
     if (provider === 'local') return 'Qwen local';
     if (provider === 'mock') return 'Mock API';
     return 'Chưa kết nối';

@@ -1,7 +1,9 @@
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+from app.api.routes.chat import get_chat_service
 from app.clients.llm.base import ChatMessage
+from app.clients.llm.mock import MockChatModel
 from app.main import app
 from app.schemas.chat import ChatRequest
 from app.services.chat import ChatService
@@ -19,6 +21,7 @@ class CapturingChatModel:
 
 @pytest.mark.asyncio
 async def test_chat_endpoint_uses_mock_provider() -> None:
+    app.dependency_overrides[get_chat_service] = lambda: ChatService(MockChatModel(), "mock")
     transport = ASGITransport(app=app)
     payload = {
         "message": "Tư vấn lịch trình Đà Nẵng",
@@ -29,8 +32,11 @@ async def test_chat_endpoint_uses_mock_provider() -> None:
         },
     }
 
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        response = await client.post("/internal/v1/ai/chat", json=payload)
+    try:
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post("/internal/v1/ai/chat", json=payload)
+    finally:
+        app.dependency_overrides.clear()
 
     assert response.status_code == 200
     body = response.json()
