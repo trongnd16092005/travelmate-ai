@@ -20,9 +20,9 @@ class Settings(BaseSettings):
     local_model_load_in_4bit: bool = False
     local_model_max_new_tokens: int = 512
     gemini_api_key: str = ""
-    gemini_model: str = "gemini-2.5-flash"
+    gemini_model: str = "gemini-3.6-flash"
     gemini_temperature: float = 0.4
-    gemini_max_output_tokens: int = 768
+    gemini_max_output_tokens: int = 1536
     openai_api_key: str = ""
 
     model_config = SettingsConfigDict(

@@ -42,10 +42,14 @@ def test_gemini_maps_system_prompt_and_chat_history() -> None:
     )
 
     assert reply == "Lịch trình Gemini."
-    assert models.request["model"] == "gemini-2.5-flash"
+    assert models.request["model"] == "gemini-3.6-flash"
     assert models.request["config"]["system_instruction"] == (
         "Bạn là TravelMate.\n\nĐiểm đến: Đà Nẵng"
     )
+    assert models.request["config"]["thinking_config"] == {
+        "thinking_level": "low",
+        "include_thoughts": False,
+    }
     assert [content["role"] for content in models.request["contents"]] == [
         "user",
         "model",
@@ -64,3 +68,21 @@ def test_factory_selects_gemini_provider() -> None:
     model = create_chat_model(gemini_settings())
 
     assert isinstance(model, GeminiChatModel)
+
+
+def test_gemini_excludes_thought_parts() -> None:
+    response = SimpleNamespace(
+        text="Phân tích nội bộ. Câu trả lời cuối.",
+        candidates=[
+            SimpleNamespace(
+                content=SimpleNamespace(
+                    parts=[
+                        SimpleNamespace(text="Phân tích nội bộ.", thought=True),
+                        SimpleNamespace(text="Câu trả lời cuối.", thought=False),
+                    ]
+                )
+            )
+        ],
+    )
+
+    assert GeminiChatModel._extract_reply(response) == "Câu trả lời cuối."

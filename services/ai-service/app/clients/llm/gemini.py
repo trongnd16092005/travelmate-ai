@@ -38,9 +38,13 @@ class GeminiChatModel:
                     "system_instruction": system_instruction,
                     "temperature": self.settings.gemini_temperature,
                     "max_output_tokens": self.settings.gemini_max_output_tokens,
+                    "thinking_config": {
+                        "thinking_level": "low",
+                        "include_thoughts": False,
+                    },
                 },
             )
-            reply = getattr(response, "text", None)
+            reply = self._extract_reply(response)
         except GeminiModelUnavailableError:
             raise
         except Exception as exc:
@@ -62,3 +66,18 @@ class GeminiChatModel:
 
         self._client = genai.Client(api_key=self.settings.gemini_api_key)
         return self._client
+
+    @staticmethod
+    def _extract_reply(response: Any) -> str | None:
+        candidates = getattr(response, "candidates", None) or []
+        if candidates:
+            content = getattr(candidates[0], "content", None)
+            parts = getattr(content, "parts", None) or []
+            answer_parts = [
+                part.text
+                for part in parts
+                if getattr(part, "text", None) and not getattr(part, "thought", False)
+            ]
+            if answer_parts:
+                return "".join(answer_parts)
+        return getattr(response, "text", None)

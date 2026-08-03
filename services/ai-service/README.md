@@ -49,7 +49,7 @@ GEMINI_API_KEY=your-api-key
 ```
 
 Không đưa file `.env` hoặc API key vào Git. Khởi động lại FastAPI sau khi đổi
-cấu hình. Model mặc định là `gemini-2.5-flash`; có thể đổi bằng
+cấu hình. Model mặc định là `gemini-3.6-flash`; có thể đổi bằng
 `GEMINI_MODEL`.
 
 ## Chạy mô hình local
