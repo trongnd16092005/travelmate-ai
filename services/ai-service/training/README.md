@@ -53,6 +53,44 @@ rộng thành khoảng 1.000–3.000 hội thoại đã được rà soát. Dữ
 lịch trình, chỗ ở, ngân sách, ăn uống, an toàn, câu hỏi cần làm rõ, giới hạn
 dữ liệu thời gian thực, giới hạn giao dịch và nội dung ngoài phạm vi.
 
+Repo có bộ 1.200 hội thoại nháp tái lập từ template:
+
+```bash
+python -m training.generate_synthetic_dataset \
+  --output training/data/travelmate_synthetic_v1.jsonl
+
+python -m training.validate_dataset \
+  training/data/travelmate_synthetic_v1.jsonl \
+  --minimum-records 1200 \
+  --require-metadata
+
+python -m training.prepare_dataset \
+  training/data/travelmate_synthetic_v1.jsonl \
+  --output-dir training/data/processed \
+  --seed 42
+```
+
+Phân bố hiện tại là 300 lịch trình, 240 ngân sách, 200 chỗ ở, 120 ăn uống,
+120 an toàn/thời tiết, 80 giới hạn dữ liệu thời gian thực, 80 câu ngoài phạm
+vi và 60 giới hạn giao dịch. Mỗi mẫu có `reviewBatch` từ 1 đến 12, tương ứng
+12 lô, mỗi lô 100 mẫu.
+
+Tất cả mẫu sinh tự động mang `reviewStatus=synthetic_draft_v1`. Sau khi đọc,
+sửa và chấp thuận một mẫu, đổi trạng thái thành `approved`. Có thể kiểm tra
+toàn bộ dataset đã được duyệt bằng lệnh:
+
+```bash
+python -m training.validate_dataset \
+  training/data/travelmate_synthetic_v1.jsonl \
+  --minimum-records 1200 \
+  --require-metadata \
+  --require-review-status approved
+```
+
+Script train mặc định từ chối dataset còn trạng thái nháp. Cờ
+`--allow-unreviewed-data` chỉ được dùng khi dry-run hoặc thử pipeline, không
+dùng để tạo adapter báo cáo chính thức.
+
 ## 2. Dry-run và train QLoRA
 
 Cài dependency:

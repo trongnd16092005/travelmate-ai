@@ -8,7 +8,10 @@ ALLOWED_ROLES = {"system", "user", "assistant"}
 
 
 def validate_record(
-    record: dict[str, Any], line_number: int, require_metadata: bool = False
+    record: dict[str, Any],
+    line_number: int,
+    require_metadata: bool = False,
+    required_review_status: str | None = None,
 ) -> list[str]:
     errors: list[str] = []
     if require_metadata:
@@ -16,6 +19,8 @@ def validate_record(
             errors.append(f"Dòng {line_number}: id phải là chuỗi không rỗng")
         if not isinstance(record.get("category"), str) or not record["category"].strip():
             errors.append(f"Dòng {line_number}: category phải là chuỗi không rỗng")
+    if required_review_status and record.get("reviewStatus") != required_review_status:
+        errors.append(f"Dòng {line_number}: reviewStatus phải là {required_review_status!r}")
     messages = record.get("messages")
     if not isinstance(messages, list) or not messages:
         return [f"Dòng {line_number}: messages phải là danh sách không rỗng"]
@@ -42,7 +47,9 @@ def validate_record(
 
 
 def load_and_validate(
-    path: Path, require_metadata: bool = False
+    path: Path,
+    require_metadata: bool = False,
+    required_review_status: str | None = None,
 ) -> tuple[list[dict[str, Any]], list[str]]:
     records: list[dict[str, Any]] = []
     errors: list[str] = []
@@ -59,7 +66,14 @@ def load_and_validate(
                 errors.append(f"Dòng {line_number}: bản ghi phải là object")
                 continue
             records.append(record)
-            errors.extend(validate_record(record, line_number, require_metadata))
+            errors.extend(
+                validate_record(
+                    record,
+                    line_number,
+                    require_metadata,
+                    required_review_status,
+                )
+            )
     return records, errors
 
 
@@ -68,9 +82,14 @@ def main() -> None:
     parser.add_argument("dataset", type=Path)
     parser.add_argument("--minimum-records", type=int, default=20)
     parser.add_argument("--require-metadata", action="store_true")
+    parser.add_argument("--require-review-status")
     args = parser.parse_args()
 
-    records, errors = load_and_validate(args.dataset, args.require_metadata)
+    records, errors = load_and_validate(
+        args.dataset,
+        args.require_metadata,
+        args.require_review_status,
+    )
     if len(records) < args.minimum_records:
         errors.append(
             f"Dataset có {len(records)} bản ghi, cần ít nhất {args.minimum_records} bản ghi"

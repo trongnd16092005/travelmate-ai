@@ -18,7 +18,14 @@ BEHAVIOR_CHECKS: dict[str, Callable[[str], bool]] = {
     "out_of_scope_marker": lambda response: response.strip().startswith("[OUT_OF_SCOPE]"),
     "realtime_limit": lambda response: contains_any(
         response,
-        ("thời gian thực", "nguồn hiện tại", "cần tra cứu", "cần kiểm tra", "mới xác nhận"),
+        (
+            "thời gian thực",
+            "nguồn hiện tại",
+            "nguồn đặt phòng",
+            "cần tra cứu",
+            "cần kiểm tra",
+            "mới xác nhận",
+        ),
     ),
     "no_transaction": lambda response: contains_any(
         response,

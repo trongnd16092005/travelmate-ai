@@ -23,6 +23,11 @@ def parse_args() -> argparse.Namespace:
         help="Chạy model Qwen3 cực nhỏ ngẫu nhiên trên CPU để kiểm tra toàn bộ pipeline.",
     )
     parser.add_argument(
+        "--allow-unreviewed-data",
+        action="store_true",
+        help="Cho phép train dữ liệu còn reviewStatus khác approved; chỉ dùng để thử pipeline.",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Chỉ kiểm tra dữ liệu và cấu hình, không tải model hoặc dùng GPU.",
@@ -30,7 +35,11 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def validate_training_files(train_path: Path, eval_path: Path) -> tuple[int, int]:
+def validate_training_files(
+    train_path: Path,
+    eval_path: Path,
+    allow_unreviewed_data: bool = False,
+) -> tuple[int, int]:
     train_records, train_errors = load_and_validate(train_path, require_metadata=True)
     eval_records, eval_errors = load_and_validate(eval_path, require_metadata=True)
     errors = [
@@ -41,6 +50,17 @@ def validate_training_files(train_path: Path, eval_path: Path) -> tuple[int, int
         errors.append("Train: cần ít nhất 2 hội thoại")
     if not eval_records:
         errors.append("Validation: cần ít nhất 1 hội thoại")
+    if not allow_unreviewed_data:
+        unreviewed = [
+            record["id"]
+            for record in train_records + eval_records
+            if "reviewStatus" in record and record["reviewStatus"] != "approved"
+        ]
+        if unreviewed:
+            errors.append(
+                f"Có {len(unreviewed)} mẫu chưa được duyệt; "
+                "chỉ dùng --allow-unreviewed-data để smoke test."
+            )
     if errors:
         raise SystemExit("\n".join(errors))
     return len(train_records), len(eval_records)
@@ -77,7 +97,11 @@ def build_run_summary(args: argparse.Namespace, train_size: int, eval_size: int)
 
 def main() -> None:
     args = parse_args()
-    train_size, eval_size = validate_training_files(args.train_dataset, args.eval_dataset)
+    train_size, eval_size = validate_training_files(
+        args.train_dataset,
+        args.eval_dataset,
+        args.allow_unreviewed_data,
+    )
     run_summary = build_run_summary(args, train_size, eval_size)
     print(json.dumps(run_summary, ensure_ascii=False, indent=2))
     if args.dry_run:

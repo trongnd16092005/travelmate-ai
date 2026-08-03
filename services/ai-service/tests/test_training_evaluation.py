@@ -1,5 +1,10 @@
+from pathlib import Path
+
+import pytest
+
 from training.evaluate_predictions import evaluate_records
-from training.train_qlora import to_prompt_completion
+from training.prepare_dataset import write_jsonl
+from training.train_qlora import to_prompt_completion, validate_training_files
 
 
 def make_record(record_id: str, behavior: str) -> dict:
@@ -49,3 +54,18 @@ def test_behavior_evaluation_tracks_missing_predictions() -> None:
 
     assert report["coverage"] == 0.0
     assert report["missingIds"] == ["scope-001"]
+
+
+def test_training_rejects_synthetic_draft_without_explicit_override(tmp_path: Path) -> None:
+    records = [make_record(f"draft-{index}", "ask_clarification") for index in range(3)]
+    for record in records:
+        record["reviewStatus"] = "synthetic_draft_v1"
+    train_path = tmp_path / "train.jsonl"
+    eval_path = tmp_path / "validation.jsonl"
+    write_jsonl(train_path, records[:2])
+    write_jsonl(eval_path, records[2:])
+
+    with pytest.raises(SystemExit, match="mẫu chưa được duyệt"):
+        validate_training_files(train_path, eval_path)
+
+    assert validate_training_files(train_path, eval_path, allow_unreviewed_data=True) == (2, 1)
