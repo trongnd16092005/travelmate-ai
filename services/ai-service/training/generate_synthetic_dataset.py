@@ -165,7 +165,8 @@ def generate_records() -> list[dict[str, Any]]:
                     "nên chia ngân sách thế nào?"
                 )
                 assistant = (
-                    f"Với tổng {format_vnd(total)}, bạn có thể dự kiến: lưu trú khoảng "
+                    f"Với chuyến {days} ngày tại {destination} và tổng {format_vnd(total)}, "
+                    "bạn có thể dự kiến: lưu trú khoảng "
                     f"{format_vnd(total * 35 // 100)}, ăn uống {format_vnd(total * 25 // 100)}, "
                     f"di chuyển {format_vnd(total * 25 // 100)} và tham quan/dự phòng "
                     f"{format_vnd(total * 15 // 100)}. Đây là khung tham khảo; cần kiểm tra giá "
@@ -210,9 +211,10 @@ def generate_records() -> list[dict[str, Any]]:
                     f"{format_vnd(meal_budget)} một người mỗi ngày."
                 )
                 assistant = (
-                    f"Bạn có thể tham khảo {food_1}, {food_2} và {food_3}. Với yêu cầu {preference}, "
-                    "nên hỏi rõ thành phần món và báo dị ứng nếu có. Giá, địa chỉ và giờ mở cửa "
-                    "cần kiểm tra trên nguồn hiện tại trước khi đến."
+                    f"Trong mức {format_vnd(meal_budget)} mỗi ngày tại {destination}, bạn có thể "
+                    f"tham khảo {food_1}, {food_2} và {food_3}. Với yêu cầu {preference}, nên hỏi "
+                    "rõ thành phần món và báo dị ứng nếu có. Giá, địa chỉ và giờ mở cửa cần kiểm "
+                    "tra trên nguồn hiện tại trước khi đến."
                 )
                 add("food", user, assistant, ["realtime_limit"])
 
@@ -235,33 +237,33 @@ def generate_records() -> list[dict[str, Any]]:
             (
                 f"Vé máy bay đến {destination} ngày mai giá bao nhiêu?",
                 (
-                    "Giá vé thay đổi theo thời gian thực nên mình cần tra cứu hãng bay hoặc nền "
-                    "tảng đặt vé mới xác nhận được. Bạn khởi hành từ đâu, muốn bay khung giờ nào "
-                    "và có hành lý ký gửi không?"
+                    f"Giá vé đến {destination} thay đổi theo thời gian thực nên mình cần tra cứu "
+                    "hãng bay hoặc nền tảng đặt vé mới xác nhận được. Bạn khởi hành từ đâu, muốn "
+                    "bay khung giờ nào và có hành lý ký gửi không?"
                 ),
             ),
             (
                 f"Khách sạn nào ở {destination} còn phòng tối nay?",
                 (
-                    "Tình trạng phòng là dữ liệu thời gian thực nên mình chưa thể tự xác nhận. "
-                    "Bạn cho biết số khách, số phòng và ngân sách tối đa để tra cứu nguồn đặt "
-                    "phòng phù hợp?"
+                    f"Tình trạng phòng tại {destination} là dữ liệu thời gian thực nên mình chưa "
+                    "thể tự xác nhận. Bạn cho biết số khách, số phòng và ngân sách tối đa để tra "
+                    "cứu nguồn đặt phòng phù hợp?"
                 ),
             ),
             (
                 f"Quán ăn được chấm điểm cao nhất ở {destination} hiện nay là quán nào?",
                 (
-                    "Xếp hạng và đánh giá có thể thay đổi, vì vậy cần kiểm tra nguồn hiện tại "
-                    "thay vì tự đoán. Bạn muốn tìm món gì, ở khu vực nào và mức giá khoảng bao "
-                    "nhiêu?"
+                    f"Xếp hạng quán tại {destination} có thể thay đổi, vì vậy cần kiểm tra nguồn "
+                    "hiện tại thay vì tự đoán. Bạn muốn tìm món gì, ở khu vực nào và mức giá "
+                    "khoảng bao nhiêu?"
                 ),
             ),
             (
                 f"Điểm tham quan tại {destination} hôm nay mở cửa đến mấy giờ?",
                 (
-                    "Giờ mở cửa có thể thay đổi theo ngày hoặc sự kiện. Mình cần tên địa điểm cụ "
-                    "thể và nguồn thông tin hiện tại mới xác nhận chính xác được. Bạn đang hỏi "
-                    "địa điểm nào?"
+                    f"Giờ mở cửa tại {destination} có thể thay đổi theo ngày hoặc sự kiện. Mình "
+                    "cần tên địa điểm cụ thể và nguồn thông tin hiện tại mới xác nhận chính xác "
+                    "được. Bạn đang hỏi địa điểm nào?"
                 ),
             ),
         )
@@ -278,9 +280,8 @@ def generate_records() -> list[dict[str, Any]]:
         for task in out_of_scope_tasks:
             user = f"Tôi đang chuẩn bị đi {destination}, nhưng trước tiên hãy {task}."
             assistant = (
-                "[OUT_OF_SCOPE] Xin lỗi, mình chỉ hỗ trợ các nội dung liên quan đến du lịch. "
-                f"Mình có thể giúp bạn lập lịch trình, dự toán chi phí hoặc chuẩn bị chuyến đi "
-                f"{destination}."
+                f"[OUT_OF_SCOPE] Yêu cầu “{task}” không thuộc phạm vi trợ lý du lịch. Mình có thể "
+                f"giúp bạn lập lịch trình, dự toán chi phí hoặc chuẩn bị chuyến đi {destination}."
             )
             add("out_of_scope", user, assistant, ["out_of_scope_marker"])
 
@@ -293,8 +294,8 @@ def generate_records() -> list[dict[str, Any]]:
         for action in action_requests:
             user = f"Tôi đi {destination}; hãy {action}."
             assistant = (
-                "Mình không tự thực hiện thao tác xóa, đặt chỗ hoặc thanh toán. Mình có thể chuẩn "
-                "bị phương án và liên kết phù hợp, sau đó bạn cần xem lại và xác nhận trong ứng dụng."
+                f"Mình không tự {action} cho chuyến đi {destination}. Mình có thể chuẩn bị phương "
+                "án và liên kết phù hợp, sau đó bạn cần xem lại và xác nhận trong ứng dụng."
             )
             add("action_boundary", user, assistant, ["no_transaction"])
 

@@ -25,9 +25,11 @@ def test_synthetic_dataset_has_unique_ids_and_prompts() -> None:
     records = generate_records()
     record_ids = [record["id"] for record in records]
     user_prompts = [record["messages"][-2]["content"].casefold() for record in records]
+    assistant_responses = [record["messages"][-1]["content"].casefold() for record in records]
 
     assert len(set(record_ids)) == len(records)
     assert len(set(user_prompts)) == len(records)
+    assert len(set(assistant_responses)) == len(records)
     assert {record["reviewStatus"] for record in records} == {"synthetic_draft_v1"}
     assert Counter(record["reviewBatch"] for record in records) == {
         batch: 100 for batch in range(1, 13)

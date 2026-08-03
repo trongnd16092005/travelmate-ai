@@ -1,0 +1,102 @@
+{
+  "status": "passed",
+  "checks": {
+    "recordCount": true,
+    "categoryDistribution": true,
+    "uniqueIds": true,
+    "uniqueUserPrompts": true,
+    "uniqueAssistantResponses": true,
+    "singleSystemPrompt": true,
+    "reviewBatches": true,
+    "draftStatus": true,
+    "responseLength": true,
+    "behaviorRules": true,
+    "generatorMatch": true
+  },
+  "recordCount": 1200,
+  "categories": {
+    "accommodation": 200,
+    "action_boundary": 60,
+    "budget": 240,
+    "food": 120,
+    "itinerary": 300,
+    "out_of_scope": 80,
+    "realtime_limit": 80,
+    "safety_weather": 120
+  },
+  "reviewBatches": {
+    "1": 100,
+    "2": 100,
+    "3": 100,
+    "4": 100,
+    "5": 100,
+    "6": 100,
+    "7": 100,
+    "8": 100,
+    "9": 100,
+    "10": 100,
+    "11": 100,
+    "12": 100
+  },
+  "uniqueAssistantResponses": 1200,
+  "responseWords": {
+    "minimum": 34,
+    "maximum": 66,
+    "average": 52.14
+  },
+  "behaviorEvaluation": {
+    "records": 1200,
+    "evaluated": 1200,
+    "coverage": 1.0,
+    "nonEmptyRate": 1.0,
+    "behaviorPassRate": 1.0,
+    "behaviors": {
+      "ask_clarification": {
+        "passed": 580,
+        "total": 580,
+        "rate": 1.0
+      },
+      "no_transaction": {
+        "passed": 60,
+        "total": 60,
+        "rate": 1.0
+      },
+      "out_of_scope_marker": {
+        "passed": 80,
+        "total": 80,
+        "rate": 1.0
+      },
+      "realtime_limit": {
+        "passed": 640,
+        "total": 640,
+        "rate": 1.0
+      },
+      "safety_caveat": {
+        "passed": 120,
+        "total": 120,
+        "rate": 1.0
+      }
+    },
+    "missingIds": [],
+    "emptyIds": []
+  },
+  "tourismReferenceSources": [
+    "https://vietnam.travel/site-map",
+    "https://vietnam.travel/places-to-go/central-vietnam",
+    "https://vietnam.travel/node/20",
+    "https://vietnam.travel/things-to-do/must-visit-places-in-da-nang",
+    "https://www.vietnam.travel/things-to-do/discovering-cao-bang-7-must-do-experiences"
+  ],
+  "limitations": [
+    "Dữ liệu được duyệt theo template, schema và rule; chưa có đánh giá độc lập từ người dùng.",
+    "Giá, rating, giờ mở cửa và tình trạng phòng không được xem là dữ liệu tĩnh.",
+    "Cần đánh giá thủ công phản hồi model trên tập Test sau khi fine-tune."
+  ],
+  "errors": [],
+  "approvedAt": "2026-08-03",
+  "reviewMethod": "template_schema_rule_audit_v1",
+  "draftFile": "travelmate_synthetic_v1.jsonl",
+  "draftSha256": "ca51da479186a7ede7abaef140d2074d0ed6c1d4bec7c93e27f62bb7f576c57b",
+  "approvedFile": "travelmate_train_v1.jsonl",
+  "approvedSha256": "d295d1ca32a78a1c569c32af9eca487087e1a6d4be007750e6885b02ddc1eeba"
+}

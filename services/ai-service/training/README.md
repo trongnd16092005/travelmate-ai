@@ -80,8 +80,23 @@ sửa và chấp thuận một mẫu, đổi trạng thái thành `approved`. C�
 toàn bộ dataset đã được duyệt bằng lệnh:
 
 ```bash
+python -m training.approve_dataset \
+  --draft training/data/travelmate_synthetic_v1.jsonl \
+  --output training/data/travelmate_train_v1.jsonl \
+  --report training/reports/dataset_v1_review.json \
+  --approved-at 2026-08-03
+```
+
+Lệnh trên chỉ phê duyệt khi dataset khớp generator đã rà soát, có đủ phân bố,
+không trùng ID/câu hỏi/câu trả lời, đủ 12 lô, đạt giới hạn độ dài và vượt toàn
+bộ rule hành vi. Đây là audit template/schema/rule, chưa thay thế đánh giá độc
+lập của người dùng.
+
+Có thể kiểm tra lại file đã phê duyệt bằng lệnh:
+
+```bash
 python -m training.validate_dataset \
-  training/data/travelmate_synthetic_v1.jsonl \
+  training/data/travelmate_train_v1.jsonl \
   --minimum-records 1200 \
   --require-metadata \
   --require-review-status approved
