@@ -255,6 +255,48 @@ Model chỉ sinh `day`, `period`, `kind` và `placeId`. Backend kiểm tra schem
 từ chối ID ngoài danh mục rồi ánh xạ ID hợp lệ sang tên địa điểm chuẩn. Không
 đưa tên địa điểm tự do do model sinh thẳng vào lịch trình của người dùng.
 
+### Hội thoại tự nhiên v4
+
+V4 bổ sung hội thoại bốn lượt để model học cách nhớ ngữ cảnh, hỏi từng tham số,
+tiếp nhận việc người dùng sửa ý, nói ngắn gọn và giữ cách xưng hô `mình - bạn`.
+Không dùng Markdown vì giao diện mobile hiện hiển thị text thường:
+
+```bash
+python -m training.build_conversation_v4 \
+  --processed-v3-dir training/data/processed/grounded_v3 \
+  --challenge training/data/challenge_v1.jsonl \
+  --reinforcement-output training/data/reinforcement_v4.jsonl \
+  --processed-output-dir training/data/processed/natural_v4 \
+  --approved-at YYYY-MM-DD
+```
+
+Bộ mới có 240 hội thoại: 200 train, 20 validation và 20 test. Khi ghép với v3,
+tổng phân bố là 2.020/180/180. Mỗi phản hồi assistant được audit để không quá
+320 ký tự, không có Markdown và chỉ hỏi tối đa một câu. Prompt challenge không
+được đưa vào bất kỳ split nào.
+
+Sau khi review mẫu thủ công, có thể train candidate v4 từ base model trên toàn
+bộ train kết hợp. Không chỉ train tiếp 200 mẫu mới vì dễ quên schema/guardrail
+đã học ở v3:
+
+```bash
+python -m training.train_qlora \
+  --train-dataset training/data/processed/natural_v4/train.jsonl \
+  --eval-dataset training/data/processed/natural_v4/validation.jsonl \
+  --output-dir artifacts/travelmate-qwen3-4b-lora-v4-natural \
+  --epochs 1 \
+  --max-length 512 \
+  --learning-rate 6e-5 \
+  --gradient-accumulation-steps 16 \
+  --lora-r 8 \
+  --lora-alpha 16 \
+  --save-steps 20
+```
+
+V4 hiện mới ở trạng thái dataset sẵn sàng; adapter mặc định vẫn là v3 cho đến
+khi candidate mới vượt structured test, challenge và đánh giá hội thoại nhiều
+lượt.
+
 Pipeline dùng NF4 4-bit, LoRA trên toàn bộ lớp tuyến tính và chỉ tính loss cho
 phần trả lời của assistant. Checkpoint, metric và cấu hình lần chạy được lưu
 cùng adapter. Mặc định checkpoint được lưu mỗi 20 bước và giữ lại ba bản gần
