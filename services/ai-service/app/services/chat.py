@@ -1,3 +1,4 @@
+import re
 from functools import lru_cache
 
 from app.clients.llm import create_chat_model
@@ -87,7 +88,7 @@ class ChatService:
         if fallback is not None:
             raw_reply = fallback
         is_out_of_scope = raw_reply.startswith(OUT_OF_SCOPE_MARKER)
-        reply = raw_reply.removeprefix(OUT_OF_SCOPE_MARKER).strip()
+        reply = self._to_plain_text(raw_reply.removeprefix(OUT_OF_SCOPE_MARKER))
         return ChatResponse(
             reply=reply,
             is_out_of_scope=is_out_of_scope,
@@ -168,6 +169,8 @@ class ChatService:
         for candidate in DESTINATIONS:
             if candidate.id == destination.id:
                 continue
+            if cls._mentions_destination(normalized_reply, candidate):
+                continue
             for place in candidate.places:
                 if cls._contains_phrase(normalized_reply, normalize_lookup_key(place.name)):
                     return (
@@ -176,6 +179,17 @@ class ChatService:
                         "hoặc kiểm tra địa điểm bằng nguồn đáng tin cậy trước khi chốt."
                     )
         return None
+
+    @classmethod
+    def _mentions_destination(
+        cls,
+        normalized_text: str,
+        destination: DestinationKnowledge,
+    ) -> bool:
+        return any(
+            cls._contains_phrase(normalized_text, normalize_lookup_key(value))
+            for value in (destination.name, *destination.aliases)
+        )
 
     @classmethod
     def _target_destination(cls, request: ChatRequest) -> DestinationKnowledge | None:
@@ -197,6 +211,24 @@ class ChatService:
     @staticmethod
     def _contains_phrase(normalized_text: str, normalized_phrase: str) -> bool:
         return f" {normalized_phrase} " in f" {normalized_text} "
+
+    @staticmethod
+    def _to_plain_text(reply: str) -> str:
+        lines: list[str] = []
+        blank = False
+        for raw_line in reply.strip().splitlines():
+            line = re.sub(r"^\s*#{1,6}\s*", "", raw_line)
+            line = re.sub(r"^\s*[-*]\s+", "• ", line)
+            line = line.replace("**", "").replace("__", "").replace("`", "")
+            line = line.strip()
+            if not line:
+                if lines and not blank:
+                    lines.append("")
+                blank = True
+                continue
+            lines.append(line)
+            blank = False
+        return "\n".join(lines).strip()
 
     def build_messages(self, request: ChatRequest) -> list[ChatMessage]:
         messages: list[ChatMessage] = [{"role": "system", "content": CHAT_SYSTEM_PROMPT}]

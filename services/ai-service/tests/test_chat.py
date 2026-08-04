@@ -151,6 +151,16 @@ def test_chat_rejects_known_place_from_another_destination() -> None:
     assert "chưa khớp với Ninh Bình" in response.reply
 
 
+def test_chat_allows_explicitly_named_neighboring_destination() -> None:
+    reply = "Bạn có thể di chuyển sang phố cổ Hội An rồi về lại Đà Nẵng trong ngày."
+    model = CapturingChatModel(reply)
+    service = ChatService(model, "local")
+
+    response = service.chat(ChatRequest(message="Lập lịch Đà Nẵng cho hai người"))
+
+    assert response.reply == reply
+
+
 def test_chat_replaces_echoed_user_message() -> None:
     message = "Tôi muốn đi qua đèo vào ngày mai"
     model = CapturingChatModel(message)
@@ -159,3 +169,12 @@ def test_chat_replaces_echoed_user_message() -> None:
     response = service.chat(ChatRequest(message=message))
 
     assert "chưa tạo được câu trả lời đủ tin cậy" in response.reply
+
+
+def test_chat_converts_markdown_to_plain_text() -> None:
+    model = CapturingChatModel("### Gợi ý\n\n* **Ăn sáng:** mì Quảng\n* `Đi bộ` nhẹ")
+    service = ChatService(model, "local")
+
+    response = service.chat(ChatRequest(message="Gợi ý ngắn cho Đà Nẵng"))
+
+    assert response.reply == "Gợi ý\n\n• Ăn sáng: mì Quảng\n• Đi bộ nhẹ"
