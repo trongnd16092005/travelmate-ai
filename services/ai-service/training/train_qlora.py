@@ -1,5 +1,6 @@
 import argparse
 import json
+import math
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +17,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-length", type=int, default=1024)
     parser.add_argument("--learning-rate", type=float, default=2e-4)
     parser.add_argument("--gradient-accumulation-steps", type=int, default=8)
+    parser.add_argument("--lora-r", type=int, default=16)
+    parser.add_argument("--lora-alpha", type=int, default=32)
+    parser.add_argument("--lora-dropout", type=float, default=0.05)
+    parser.add_argument(
+        "--max-steps",
+        type=int,
+        default=-1,
+        help="Giới hạn số bước optimizer để benchmark; -1 nghĩa là chạy đủ số epoch.",
+    )
     parser.add_argument(
         "--save-steps",
         type=int,
@@ -81,10 +91,8 @@ def to_prompt_completion(example: dict[str, Any]) -> dict[str, Any]:
 
 
 def build_run_summary(args: argparse.Namespace, train_size: int, eval_size: int) -> dict[str, Any]:
-    estimated_steps = max(
-        1,
-        round(train_size * args.epochs / args.gradient_accumulation_steps),
-    )
+    epoch_steps = max(1, math.ceil(train_size * args.epochs / args.gradient_accumulation_steps))
+    estimated_steps = min(epoch_steps, args.max_steps) if args.max_steps > 0 else epoch_steps
     return {
         "modelId": args.model_id,
         "trainDataset": str(args.train_dataset),
@@ -95,6 +103,11 @@ def build_run_summary(args: argparse.Namespace, train_size: int, eval_size: int)
         "maxLength": args.max_length,
         "learningRate": args.learning_rate,
         "gradientAccumulationSteps": args.gradient_accumulation_steps,
+        "loraR": args.lora_r,
+        "loraAlpha": args.lora_alpha,
+        "loraDropout": args.lora_dropout,
+        "maxSteps": args.max_steps,
+        "estimatedSteps": estimated_steps,
         "saveSteps": args.save_steps,
         "warmupSteps": max(1, round(estimated_steps * 0.05)),
         "smokeTest": args.smoke_test,
@@ -106,6 +119,14 @@ def main() -> None:
     args = parse_args()
     if args.save_steps < 1:
         raise SystemExit("--save-steps phải lớn hơn hoặc bằng 1")
+    if args.gradient_accumulation_steps < 1:
+        raise SystemExit("--gradient-accumulation-steps phải lớn hơn hoặc bằng 1")
+    if args.lora_r < 1 or args.lora_alpha < 1:
+        raise SystemExit("--lora-r và --lora-alpha phải lớn hơn hoặc bằng 1")
+    if not 0 <= args.lora_dropout < 1:
+        raise SystemExit("--lora-dropout phải nằm trong khoảng [0, 1)")
+    if args.max_steps == 0 or args.max_steps < -1:
+        raise SystemExit("--max-steps phải là -1 hoặc số nguyên dương")
     train_size, eval_size = validate_training_files(
         args.train_dataset,
         args.eval_dataset,
@@ -188,9 +209,9 @@ def main() -> None:
     )
 
     lora_config = LoraConfig(
-        r=16,
-        lora_alpha=32,
-        lora_dropout=0.05,
+        r=args.lora_r,
+        lora_alpha=args.lora_alpha,
+        lora_dropout=args.lora_dropout,
         bias="none",
         task_type="CAUSAL_LM",
         target_modules="all-linear",
@@ -198,6 +219,7 @@ def main() -> None:
     training_config = SFTConfig(
         output_dir=str(args.output_dir),
         num_train_epochs=args.epochs,
+        max_steps=args.max_steps,
         per_device_train_batch_size=1,
         per_device_eval_batch_size=1,
         gradient_accumulation_steps=args.gradient_accumulation_steps,

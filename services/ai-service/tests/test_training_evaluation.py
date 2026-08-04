@@ -1,10 +1,12 @@
+from argparse import Namespace
 from pathlib import Path
 
 import pytest
 
+from training.build_reinforcement_v2 import EXPECTED_COUNTS, build_records
 from training.evaluate_predictions import evaluate_records
 from training.prepare_dataset import write_jsonl
-from training.train_qlora import to_prompt_completion, validate_training_files
+from training.train_qlora import build_run_summary, to_prompt_completion, validate_training_files
 
 
 def make_record(record_id: str, behavior: str) -> dict:
@@ -69,3 +71,66 @@ def test_training_rejects_synthetic_draft_without_explicit_override(tmp_path: Pa
         validate_training_files(train_path, eval_path)
 
     assert validate_training_files(train_path, eval_path, allow_unreviewed_data=True) == (2, 1)
+
+
+def test_build_run_summary_honors_benchmark_step_limit() -> None:
+    args = Namespace(
+        model_id="Qwen/Qwen3-4B",
+        train_dataset=Path("train.jsonl"),
+        eval_dataset=Path("validation.jsonl"),
+        output_dir=Path("adapter-v2"),
+        epochs=3.0,
+        max_length=512,
+        learning_rate=2e-4,
+        gradient_accumulation_steps=16,
+        lora_r=8,
+        lora_alpha=16,
+        lora_dropout=0.05,
+        max_steps=20,
+        save_steps=20,
+        smoke_test=False,
+    )
+
+    summary = build_run_summary(args, train_size=960, eval_size=120)
+
+    assert summary["estimatedSteps"] == 20
+    assert summary["maxSteps"] == 20
+    assert summary["loraR"] == 8
+    assert summary["gradientAccumulationSteps"] == 16
+
+
+def test_build_run_summary_rounds_partial_optimizer_step_up() -> None:
+    args = Namespace(
+        model_id="Qwen/Qwen3-4B",
+        train_dataset=Path("train.jsonl"),
+        eval_dataset=Path("validation.jsonl"),
+        output_dir=Path("adapter-v2"),
+        epochs=1.0,
+        max_length=512,
+        learning_rate=1e-4,
+        gradient_accumulation_steps=16,
+        lora_r=8,
+        lora_alpha=16,
+        lora_dropout=0.05,
+        max_steps=-1,
+        save_steps=20,
+        smoke_test=False,
+    )
+
+    summary = build_run_summary(args, train_size=1140, eval_size=120)
+
+    assert summary["estimatedSteps"] == 72
+
+
+def test_reinforcement_v2_has_expected_distribution_and_unique_prompts() -> None:
+    records = build_records("2026-08-05")
+    prompts = [record["messages"][-2]["content"].casefold() for record in records]
+    counts: dict[str, int] = {}
+    for record in records:
+        category = record["category"]
+        counts[category] = counts.get(category, 0) + 1
+
+    assert len(records) == 180
+    assert len(set(prompts)) == len(prompts)
+    assert dict(sorted(counts.items())) == EXPECTED_COUNTS
+    assert all(record["reviewStatus"] == "approved" for record in records)

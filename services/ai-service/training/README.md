@@ -160,6 +160,62 @@ python -m training.train_qlora \
   --epochs 3
 ```
 
+Benchmark Qwen3-4B trên GPU 6 GB trước khi chạy dài:
+
+```bash
+python -m training.train_qlora \
+  --train-dataset training/data/processed/train.jsonl \
+  --eval-dataset training/data/processed/validation.jsonl \
+  --output-dir artifacts/travelmate-qwen3-4b-lora-v2-benchmark \
+  --epochs 1 \
+  --max-length 512 \
+  --gradient-accumulation-steps 16 \
+  --lora-r 8 \
+  --lora-alpha 16 \
+  --max-steps 20 \
+  --save-steps 20
+```
+
+`--max-steps` chỉ dùng cho benchmark. Nếu 20 bước hoàn tất mà không hết VRAM,
+bỏ tham số này và đổi sang thư mục output v2 chính thức để chạy đủ epoch. Không
+dùng chung thư mục benchmark với adapter đã được đánh giá hoặc adapter v1.
+
+### Reinforcement v2
+
+Reinforcement v2 bổ sung các tình huống tiếng lóng ngân sách, yêu cầu còn thiếu,
+ngân sách bất khả thi, dữ liệu thời gian thực, bẫy địa danh, an toàn, ngoài phạm
+vi và ranh giới giao dịch. Script bắt buộc prompt reinforcement không trùng với
+tập challenge:
+
+```bash
+python -m training.build_reinforcement_v2 \
+  --approved-v1-dir training/data/processed/approved_v1 \
+  --challenge training/data/challenge_v1.jsonl \
+  --reinforcement-output training/data/reinforcement_v2.jsonl \
+  --processed-output-dir training/data/processed/reinforcement_v2 \
+  --approved-at YYYY-MM-DD
+```
+
+Lần chạy local đã kiểm chứng trên GPU 6 GB dùng một epoch và learning rate thấp
+hơn bản v1:
+
+```bash
+python -m training.train_qlora \
+  --train-dataset training/data/processed/reinforcement_v2/train.jsonl \
+  --eval-dataset training/data/processed/reinforcement_v2/validation.jsonl \
+  --output-dir artifacts/travelmate-qwen3-4b-lora-v2-expanded \
+  --epochs 1 \
+  --max-length 512 \
+  --learning-rate 1e-4 \
+  --gradient-accumulation-steps 16 \
+  --lora-r 8 \
+  --lora-alpha 16 \
+  --save-steps 20
+```
+
+Reinforcement được ghép vào train; validation và test v1 giữ nguyên. Challenge
+chỉ dùng để đánh giá, tuyệt đối không ghép vào train để tránh rò rỉ dữ liệu.
+
 Pipeline dùng NF4 4-bit, LoRA trên toàn bộ lớp tuyến tính và chỉ tính loss cho
 phần trả lời của assistant. Checkpoint, metric và cấu hình lần chạy được lưu
 cùng adapter. Mặc định checkpoint được lưu mỗi 20 bước và giữ lại ba bản gần
