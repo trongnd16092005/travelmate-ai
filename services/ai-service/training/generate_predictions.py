@@ -14,7 +14,33 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--model-id", default="Qwen/Qwen3-4B")
     parser.add_argument("--max-new-tokens", type=int, default=384)
     parser.add_argument("--limit", type=int)
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="Ghi tiếp vào file output và bỏ qua các id đã sinh.",
+    )
     return parser.parse_args()
+
+
+def load_completed_ids(path: Path) -> set[str]:
+    if not path.exists():
+        return set()
+    completed_ids: set[str] = set()
+    with path.open(encoding="utf-8") as prediction_file:
+        for line_number, raw_line in enumerate(prediction_file, start=1):
+            if not raw_line.strip():
+                continue
+            try:
+                prediction = json.loads(raw_line)
+            except json.JSONDecodeError as exc:
+                raise SystemExit(
+                    f"Output dòng {line_number}: JSON không hợp lệ ({exc.msg})"
+                ) from exc
+            record_id = prediction.get("id")
+            if not isinstance(record_id, str) or not record_id:
+                raise SystemExit(f"Output dòng {line_number}: thiếu id")
+            completed_ids.add(record_id)
+    return completed_ids
 
 
 def generate_response(
@@ -54,6 +80,12 @@ def main() -> None:
     if args.limit is not None:
         records = records[: args.limit]
 
+    completed_ids = load_completed_ids(args.output) if args.resume else set()
+    pending_records = [record for record in records if record["id"] not in completed_ids]
+    if not pending_records:
+        print(f"Đã có đủ {len(records)}/{len(records)} phản hồi trong {args.output}")
+        return
+
     import torch
     from peft import PeftModel
     from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
@@ -78,8 +110,9 @@ def main() -> None:
     model = PeftModel.from_pretrained(model, args.adapter_path).eval()
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    with args.output.open("w", encoding="utf-8") as output_file:
-        for index, record in enumerate(records, start=1):
+    output_mode = "a" if args.resume else "w"
+    with args.output.open(output_mode, encoding="utf-8") as output_file:
+        for index, record in enumerate(pending_records, start=1):
             response = generate_response(
                 model,
                 tokenizer,
@@ -92,7 +125,9 @@ def main() -> None:
                 "response": response,
             }
             output_file.write(json.dumps(prediction, ensure_ascii=False) + "\n")
-            print(f"[{index}/{len(records)}] {record['id']}")
+            output_file.flush()
+            completed = len(completed_ids) + index
+            print(f"[{completed}/{len(records)}] {record['id']}")
 
 
 if __name__ == "__main__":

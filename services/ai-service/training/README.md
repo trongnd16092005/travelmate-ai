@@ -171,8 +171,12 @@ Sinh phản hồi cho tập Test:
 python -m training.generate_predictions \
   --dataset training/data/processed/test.jsonl \
   --adapter-path artifacts/travelmate-qwen3-4b-lora \
-  --output training/outputs/test_predictions.jsonl
+  --output training/outputs/test_predictions.jsonl \
+  --resume
 ```
+
+`--resume` ghi từng phản hồi xuống file ngay sau khi sinh và bỏ qua các ID đã
+có, giúp tiếp tục đánh giá khi runtime bị reset.
 
 Chấm độ phủ, phản hồi rỗng và các hành vi đã gán trong dataset:
 
