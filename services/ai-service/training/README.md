@@ -16,9 +16,10 @@ Bộ `training/data/challenge_v1.jsonl` gồm 20 tình huống viết tay và kh
 đưa vào train. Tập này kiểm tra câu hỏi mới, hội thoại nhiều lượt, giới hạn
 giao dịch, dữ liệu thời gian thực, tính an toàn và nguy cơ bịa địa điểm.
 
-Quá trình huấn luyện chính thức nên chạy trên Linux có GPU NVIDIA tối thiểu
-khoảng 16 GB VRAM, chẳng hạn Google Colab hoặc Kaggle. Laptop RTX 4050 6 GB
-chỉ nên dùng để chạy API, giao diện demo hoặc thử suy luận 4-bit.
+Quá trình huấn luyện thuận lợi nhất trên Linux có GPU NVIDIA khoảng 16 GB VRAM,
+chẳng hạn Google Colab hoặc Kaggle. Laptop RTX 4050 6 GB vẫn có thể fine-tune
+Qwen3-4B bằng QLoRA trong WSL2 với batch size 1, gradient accumulation 16,
+context 512 và LoRA `r=8`; thời gian chạy sẽ lâu hơn và cần theo dõi nhiệt độ.
 
 ## 1. Chuẩn bị dữ liệu
 
@@ -216,6 +217,44 @@ python -m training.train_qlora \
 Reinforcement được ghép vào train; validation và test v1 giữ nguyên. Challenge
 chỉ dùng để đánh giá, tuyệt đối không ghép vào train để tránh rò rỉ dữ liệu.
 
+### Grounding và reinforcement v3
+
+V3 bổ sung hai lớp bảo vệ: dữ liệu hội thoại cho các ca thiếu thông tin, ngoài
+phạm vi, giao dịch, realtime và an toàn; cùng dữ liệu lịch trình JSON chỉ được
+tham chiếu `placeId` thuộc danh mục điểm đến. Challenge vẫn chỉ dùng để chấm và
+script sẽ dừng nếu phát hiện prompt bị trùng:
+
+```bash
+python -m training.build_training_v3 \
+  --processed-v2-dir training/data/processed/reinforcement_v2 \
+  --challenge training/data/challenge_v1.jsonl \
+  --reinforcement-output training/data/reinforcement_v3.jsonl \
+  --processed-output-dir training/data/processed/grounded_v3 \
+  --approved-at YYYY-MM-DD
+```
+
+Dataset hiện gồm 1.820 mẫu train, 160 validation và 160 test. Trong số mẫu mới
+có 200 hội thoại guardrail, 480 lịch trình train và 80 lịch trình validation/
+test trên 20 điểm đến. Train local đã dùng cấu hình sau:
+
+```bash
+python -m training.train_qlora \
+  --train-dataset training/data/processed/grounded_v3/train.jsonl \
+  --eval-dataset training/data/processed/grounded_v3/validation.jsonl \
+  --output-dir artifacts/travelmate-qwen3-4b-lora-v3-grounded \
+  --epochs 1 \
+  --max-length 512 \
+  --learning-rate 8e-5 \
+  --gradient-accumulation-steps 16 \
+  --lora-r 8 \
+  --lora-alpha 16 \
+  --save-steps 20
+```
+
+Model chỉ sinh `day`, `period`, `kind` và `placeId`. Backend kiểm tra schema,
+từ chối ID ngoài danh mục rồi ánh xạ ID hợp lệ sang tên địa điểm chuẩn. Không
+đưa tên địa điểm tự do do model sinh thẳng vào lịch trình của người dùng.
+
 Pipeline dùng NF4 4-bit, LoRA trên toàn bộ lớp tuyến tính và chỉ tính loss cho
 phần trả lời của assistant. Checkpoint, metric và cấu hình lần chạy được lưu
 cùng adapter. Mặc định checkpoint được lưu mỗi 20 bước và giữ lại ba bản gần
@@ -268,6 +307,22 @@ python -m training.evaluate_predictions \
   --output training/outputs/challenge_report.json
 ```
 
+Với v3, sinh và chấm riêng 40 ca lịch trình cấu trúc chưa xuất hiện trong train:
+
+```bash
+python -m training.generate_predictions \
+  --dataset training/data/processed/grounded_v3/structured_test.jsonl \
+  --adapter-path artifacts/travelmate-qwen3-4b-lora-v3-grounded \
+  --output training/outputs/structured_test_predictions.jsonl \
+  --max-new-tokens 512 \
+  --resume
+
+python -m training.evaluate_structured_predictions \
+  --dataset training/data/processed/grounded_v3/structured_test.jsonl \
+  --predictions training/outputs/structured_test_predictions.jsonl \
+  --output training/outputs/structured_test_report.json
+```
+
 Điểm tự động không thay thế đánh giá thủ công. Cần đọc từng lịch trình để kiểm
 tra tính hợp lý, độ đúng của thông tin và mức hữu ích đối với người dùng. Toàn
 bộ 20 phản hồi challenge cần được chấm độ đúng, hữu ích, an toàn, tự nhiên và
@@ -278,7 +333,7 @@ tuân thủ yêu cầu theo thang 1–5.
 ```env
 LLM_PROVIDER=local
 LOCAL_MODEL_ID=Qwen/Qwen3-4B
-LOCAL_ADAPTER_PATH=artifacts/travelmate-qwen3-4b-lora
+LOCAL_ADAPTER_PATH=artifacts/travelmate-qwen3-4b-lora-v3-grounded
 LOCAL_MODEL_LOAD_IN_4BIT=true
 ```
 

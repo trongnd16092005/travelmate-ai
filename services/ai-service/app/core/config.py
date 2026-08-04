@@ -15,9 +15,9 @@ class Settings(BaseSettings):
     )
     llm_provider: Literal["mock", "gemini", "local"] = "mock"
     local_model_id: str = "Qwen/Qwen3-4B"
-    local_adapter_path: str = "artifacts/travelmate-qwen3-4b-lora"
+    local_adapter_path: str = "artifacts/travelmate-qwen3-4b-lora-v3-grounded"
     local_model_device: str = "auto"
-    local_model_load_in_4bit: bool = False
+    local_model_load_in_4bit: bool = True
     local_model_max_new_tokens: int = 512
     gemini_api_key: str = ""
     gemini_model: str = "gemini-3.6-flash"

@@ -81,6 +81,7 @@ python -m pip install -e ".[local-llm]"
 Copy-Item .env.example .env
 ```
 
-Trong `.env`, đặt `LLM_PROVIDER=local`. Nếu đã fine-tune, đặt
-`LOCAL_ADAPTER_PATH` đến thư mục LoRA adapter. Hướng dẫn huấn luyện nằm tại
+Trong `.env`, đặt `LLM_PROVIDER=local`. Candidate mặc định là adapter v3 có
+grounding tại `artifacts/travelmate-qwen3-4b-lora-v3-grounded`; trọng số cần có
+trên từng máy và không được commit lên Git. Hướng dẫn huấn luyện nằm tại
 [`training/README.md`](training/README.md).
