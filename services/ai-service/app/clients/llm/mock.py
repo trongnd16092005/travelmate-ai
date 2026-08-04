@@ -18,23 +18,22 @@ class MockChatModel:
     @staticmethod
     def _generate_itinerary(user_prompt: str) -> str:
         duration_match = re.search(r"Số ngày:\s*(\d+)", user_prompt)
-        destination_match = re.search(r"Điểm đến:\s*(.+)", user_prompt)
         duration_days = int(duration_match.group(1)) if duration_match else 1
-        destination = destination_match.group(1).strip() if destination_match else "điểm đến"
+        allowed_place_ids = re.findall(r"^- ([^|\n]+)\s*\|", user_prompt, flags=re.MULTILINE)
         return json.dumps(
             {
-                "summary": f"Bản mẫu {duration_days} ngày tại {destination}.",
-                "assumptions": ["Đây là dữ liệu mock để kiểm tra giao diện."],
                 "days": [
                     {
                         "day": day,
-                        "title": f"Khám phá {destination} ngày {day}",
                         "activities": [
                             {
                                 "period": "morning",
-                                "title": "Khám phá địa điểm phù hợp",
-                                "placeName": destination,
-                                "notes": "Bật Gemini hoặc Qwen local để nhận gợi ý thực tế.",
+                                "kind": "visit" if allowed_place_ids else "free_time",
+                                "placeId": (
+                                    allowed_place_ids[(day - 1) % len(allowed_place_ids)].strip()
+                                    if allowed_place_ids
+                                    else None
+                                ),
                             }
                         ],
                     }

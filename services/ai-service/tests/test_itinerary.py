@@ -16,18 +16,14 @@ class StructuredItineraryModel:
         self.messages: list[ChatMessage] = []
         self.reply = reply or json.dumps(
             {
-                "summary": "Ba ngày khám phá Đà Nẵng.",
-                "assumptions": ["Kiểm tra thời tiết trước khi đi."],
                 "days": [
                     {
                         "day": day,
-                        "title": f"Ngày {day}",
                         "activities": [
                             {
                                 "period": "morning",
-                                "title": "Tham quan điểm phù hợp",
-                                "placeName": "Đà Nẵng",
-                                "notes": "Kiểm tra nguồn hiện tại.",
+                                "kind": "visit",
+                                "placeId": "da-nang:ban-dao-son-tra",
                             }
                         ],
                     }
@@ -85,7 +81,72 @@ def test_ready_itinerary_uses_model_content_and_backend_budget() -> None:
     assert response.plan is not None
     assert len(response.plan.days) == 3
     assert response.plan.budget.total_vnd == 5_000_000
+    assert response.plan.days[0].activities[0].place_name == "bán đảo Sơn Trà"
     assert "Sở thích: biển, ẩm thực" in model.messages[-1]["content"]
+    assert "da-nang:ban-dao-son-tra" in model.messages[-1]["content"]
+
+
+def test_itinerary_rejects_place_id_outside_destination_catalog() -> None:
+    reply = json.dumps(
+        {
+            "days": [
+                {
+                    "day": 1,
+                    "activities": [
+                        {
+                            "period": "morning",
+                            "kind": "visit",
+                            "placeId": "quy-nhon:ky-co",
+                        }
+                    ],
+                }
+            ]
+        }
+    )
+    service = ItineraryService(StructuredItineraryModel(reply), "local")
+
+    with pytest.raises(RuntimeError, match="không thuộc danh mục"):
+        service.generate(
+            ItineraryRequest(
+                destination="Đà Nẵng",
+                durationDays=1,
+                numPeople=2,
+                budgetVnd=2_000_000,
+            )
+        )
+
+
+def test_itinerary_normalizes_destination_alias_and_grounded_title() -> None:
+    reply = json.dumps(
+        {
+            "days": [
+                {
+                    "day": 1,
+                    "activities": [
+                        {
+                            "period": "morning",
+                            "kind": "visit",
+                            "placeId": "tp-ho-chi-minh:cho-ben-thanh",
+                        }
+                    ],
+                }
+            ]
+        }
+    )
+    service = ItineraryService(StructuredItineraryModel(reply), "local")
+
+    response = service.generate(
+        ItineraryRequest(
+            destination="Sài Gòn",
+            durationDays=1,
+            numPeople=2,
+            budgetVnd=2_000_000,
+        )
+    )
+
+    assert response.plan is not None
+    assert response.plan.destination == "TP. Hồ Chí Minh"
+    assert response.plan.days[0].activities[0].title == "Tham quan chợ Bến Thành"
 
 
 def test_mock_model_supports_structured_itinerary_demo() -> None:

@@ -5,9 +5,11 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from app.clients.llm.base import ChatModel
+from app.knowledge.destinations import DestinationKnowledge, resolve_destination
 from app.prompts.itinerary import ITINERARY_SYSTEM_PROMPT
 from app.schemas.itinerary import (
     BudgetBreakdown,
+    ItineraryActivity,
     ItineraryDay,
     ItineraryPlan,
     ItineraryRequest,
@@ -26,12 +28,25 @@ def _to_camel(value: str) -> str:
     return first + "".join(word.capitalize() for word in rest)
 
 
+class GeneratedActivity(BaseModel):
+    model_config = ConfigDict(alias_generator=_to_camel, populate_by_name=True)
+
+    period: str
+    kind: str
+    place_id: str | None = None
+
+
+class GeneratedDay(BaseModel):
+    model_config = ConfigDict(alias_generator=_to_camel, populate_by_name=True)
+
+    day: int = Field(ge=1, le=14)
+    activities: list[GeneratedActivity] = Field(min_length=1, max_length=3)
+
+
 class GeneratedPlan(BaseModel):
     model_config = ConfigDict(alias_generator=_to_camel, populate_by_name=True)
 
-    summary: str = Field(min_length=1, max_length=500)
-    assumptions: list[str] = Field(default_factory=list, max_length=8)
-    days: list[ItineraryDay]
+    days: list[GeneratedDay]
 
 
 QUESTION_BY_FIELD: dict[MissingItineraryField, str] = {
@@ -112,10 +127,18 @@ class ItineraryService:
         if duration_days is None or request.num_people is None or request.budget_vnd is None:
             raise ItineraryGenerationError("Không thể xác định đủ tham số lịch trình.")
 
+        destination_knowledge = resolve_destination(destination)
         raw_reply = self.model.generate(
             [
                 {"role": "system", "content": ITINERARY_SYSTEM_PROMPT},
-                {"role": "user", "content": self._build_user_prompt(request, duration_days)},
+                {
+                    "role": "user",
+                    "content": self._build_user_prompt(
+                        request,
+                        duration_days,
+                        destination_knowledge,
+                    ),
+                },
             ]
         )
         try:
@@ -130,19 +153,36 @@ class ItineraryService:
                 f"AI phải trả đủ các ngày theo thứ tự 1 đến {duration_days}."
             )
 
+        grounded_days = self._ground_days(generated.days, destination_knowledge)
+        canonical_destination = (
+            destination_knowledge.name if destination_knowledge is not None else destination
+        )
+        assumptions = [
+            "Kiểm tra thời tiết, giờ hoạt động và tình trạng dịch vụ trước khi đi."
+        ]
+        if destination_knowledge is not None:
+            assumptions.append("Địa điểm được giới hạn theo danh mục TravelMate.")
+        else:
+            assumptions.append(
+                "TravelMate chưa có danh mục địa điểm cho điểm đến này; lịch chỉ gồm hoạt động chung."
+            )
         plan = ItineraryPlan(
-            destination=destination,
+            destination=canonical_destination,
             durationDays=duration_days,
             numPeople=request.num_people,
-            summary=generated.summary,
-            assumptions=generated.assumptions,
-            days=generated.days,
+            summary=f"Lịch trình {duration_days} ngày tại {canonical_destination}.",
+            assumptions=assumptions,
+            days=grounded_days,
             budget=allocate_budget(request.budget_vnd),
         )
         return ItineraryResponse(status="ready", plan=plan, provider=self.provider)
 
     @staticmethod
-    def _build_user_prompt(request: ItineraryRequest, duration_days: int) -> str:
+    def _build_user_prompt(
+        request: ItineraryRequest,
+        duration_days: int,
+        destination_knowledge: DestinationKnowledge | None,
+    ) -> str:
         preferences = ", ".join(item.strip() for item in request.preferences if item.strip())
         details = [
             f"Điểm đến: {request.destination}",
@@ -157,8 +197,85 @@ class ItineraryService:
             details.append(f"Ngày kết thúc: {request.end_date.isoformat()}")
         if request.notes:
             details.append(f"Lưu ý: {request.notes.strip()}")
+        if destination_knowledge is not None:
+            details.append("Danh sách placeId được phép:")
+            details.extend(
+                f"- {place.id} | {place.name}" for place in destination_knowledge.places
+            )
+        else:
+            details.append(
+                "Danh mục chưa hỗ trợ điểm đến này: không dùng hoạt động visit và mọi placeId phải null."
+            )
         details.append(f"Hãy trả đúng {duration_days} ngày, đánh số liên tục từ 1.")
         return "\n".join(details)
+
+    @staticmethod
+    def _ground_days(
+        generated_days: list[GeneratedDay],
+        destination: DestinationKnowledge | None,
+    ) -> list[ItineraryDay]:
+        allowed_periods = {"morning", "afternoon", "evening"}
+        allowed_kinds = {"visit", "meal", "rest", "travel", "free_time"}
+        kind_titles = {
+            "meal": "Trải nghiệm ẩm thực địa phương",
+            "rest": "Nghỉ ngơi",
+            "travel": "Di chuyển",
+            "free_time": "Thời gian tự do",
+        }
+        place_by_id = destination.place_by_id if destination is not None else {}
+        grounded_days: list[ItineraryDay] = []
+        grounded_visits = 0
+
+        for day in generated_days:
+            periods: set[str] = set()
+            activities: list[ItineraryActivity] = []
+            for activity in day.activities:
+                if activity.period not in allowed_periods:
+                    raise ItineraryGenerationError("AI trả về buổi hoạt động không hợp lệ.")
+                if activity.period in periods:
+                    raise ItineraryGenerationError("Mỗi ngày chỉ được có một hoạt động cho mỗi buổi.")
+                periods.add(activity.period)
+                if activity.kind not in allowed_kinds:
+                    raise ItineraryGenerationError("AI trả về loại hoạt động không hợp lệ.")
+
+                if activity.kind == "visit":
+                    if not activity.place_id or activity.place_id not in place_by_id:
+                        raise ItineraryGenerationError(
+                            "AI chọn địa điểm không thuộc danh mục của điểm đến."
+                        )
+                    place = place_by_id[activity.place_id]
+                    grounded_visits += 1
+                    title = f"Tham quan {place.name}"
+                    place_name = place.name
+                else:
+                    if activity.place_id is not None:
+                        raise ItineraryGenerationError(
+                            "Chỉ hoạt động visit mới được gắn placeId."
+                        )
+                    title = kind_titles[activity.kind]
+                    place_name = None
+
+                activities.append(
+                    ItineraryActivity(
+                        period=activity.period,
+                        title=title,
+                        placeName=place_name,
+                        notes=None,
+                    )
+                )
+
+            day_destination = destination.name if destination is not None else "điểm đến"
+            grounded_days.append(
+                ItineraryDay(
+                    day=day.day,
+                    title=f"Ngày {day.day} tại {day_destination}",
+                    activities=activities,
+                )
+            )
+
+        if destination is not None and grounded_visits == 0:
+            raise ItineraryGenerationError("Lịch trình phải có ít nhất một địa điểm đã được grounding.")
+        return grounded_days
 
 
 @lru_cache

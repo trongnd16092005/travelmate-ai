@@ -86,7 +86,39 @@ def test_chat_service_removes_out_of_scope_marker() -> None:
     model = CapturingChatModel("[OUT_OF_SCOPE] Mình chỉ hỗ trợ du lịch.")
     service = ChatService(model, "mock")
 
-    response = service.chat(ChatRequest(message="Viết code Java"))
+    response = service.chat(ChatRequest(message="Nấu món này giúp tôi"))
 
     assert response.is_out_of_scope is True
     assert response.reply == "Mình chỉ hỗ trợ du lịch."
+
+
+def test_out_of_scope_guardrail_does_not_call_model() -> None:
+    model = CapturingChatModel("không nên được gọi")
+    service = ChatService(model, "local")
+
+    response = service.chat(ChatRequest(message="Viết code Java sắp xếp mảng cho tôi"))
+
+    assert response.is_out_of_scope is True
+    assert model.messages == []
+
+
+def test_transaction_guardrail_does_not_call_model() -> None:
+    model = CapturingChatModel("không nên được gọi")
+    service = ChatService(model, "local")
+
+    response = service.chat(ChatRequest(message="Đặt luôn phòng rồi trừ tiền trong thẻ của tôi"))
+
+    assert response.is_out_of_scope is False
+    assert "không thể tự thực hiện giao dịch" in response.reply
+    assert model.messages == []
+
+
+def test_medical_guardrail_prioritizes_safety_without_calling_model() -> None:
+    model = CapturingChatModel("không nên được gọi")
+    service = ChatService(model, "local")
+
+    response = service.chat(ChatRequest(message="Tôi đang sốt, uống thuốc gì để mai vẫn bay?"))
+
+    assert response.is_out_of_scope is False
+    assert "Ưu tiên an toàn" in response.reply
+    assert model.messages == []
