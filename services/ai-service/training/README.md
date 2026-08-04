@@ -152,7 +152,16 @@ python -m training.train_qlora \
 
 Pipeline dùng NF4 4-bit, LoRA trên toàn bộ lớp tuyến tính và chỉ tính loss cho
 phần trả lời của assistant. Checkpoint, metric và cấu hình lần chạy được lưu
-cùng adapter.
+cùng adapter. Mặc định checkpoint được lưu mỗi 20 bước và giữ lại ba bản gần
+nhất để hạn chế mất tiến trình khi runtime Colab bị reset. Sau khi dựng lại môi
+trường và mount đúng thư mục Drive, tiếp tục lần chạy bằng cùng tham số và thêm:
+
+```bash
+--resume-from-checkpoint
+```
+
+Callback lưu định kỳ vẫn dùng `--save-steps` của lần chạy mới nếu checkpoint cũ
+được tạo với chu kỳ lưu khác.
 
 ## 3. Đánh giá
 

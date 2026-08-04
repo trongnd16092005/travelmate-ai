@@ -16,6 +16,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-length", type=int, default=1024)
     parser.add_argument("--learning-rate", type=float, default=2e-4)
     parser.add_argument("--gradient-accumulation-steps", type=int, default=8)
+    parser.add_argument(
+        "--save-steps",
+        type=int,
+        default=20,
+        help="Lưu checkpoint sau mỗi số bước này để có thể tiếp tục khi runtime bị reset.",
+    )
     parser.add_argument("--resume-from-checkpoint", action="store_true")
     parser.add_argument(
         "--smoke-test",
@@ -89,6 +95,7 @@ def build_run_summary(args: argparse.Namespace, train_size: int, eval_size: int)
         "maxLength": args.max_length,
         "learningRate": args.learning_rate,
         "gradientAccumulationSteps": args.gradient_accumulation_steps,
+        "saveSteps": args.save_steps,
         "warmupSteps": max(1, round(estimated_steps * 0.05)),
         "smokeTest": args.smoke_test,
         "outputDir": str(args.output_dir),
@@ -97,6 +104,8 @@ def build_run_summary(args: argparse.Namespace, train_size: int, eval_size: int)
 
 def main() -> None:
     args = parse_args()
+    if args.save_steps < 1:
+        raise SystemExit("--save-steps phải lớn hơn hoặc bằng 1")
     train_size, eval_size = validate_training_files(
         args.train_dataset,
         args.eval_dataset,
@@ -111,7 +120,7 @@ def main() -> None:
     import torch
     from datasets import load_dataset
     from peft import LoraConfig
-    from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+    from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig, TrainerCallback
     from trl import SFTConfig, SFTTrainer
 
     if not args.smoke_test and not torch.cuda.is_available():
@@ -194,8 +203,9 @@ def main() -> None:
         completion_only_loss=True,
         logging_steps=5,
         eval_strategy="epoch",
-        save_strategy="epoch",
-        save_total_limit=2,
+        save_strategy="steps",
+        save_steps=args.save_steps,
+        save_total_limit=3,
         gradient_checkpointing=not args.smoke_test,
         gradient_checkpointing_kwargs=({"use_reentrant": False} if not args.smoke_test else None),
         bf16=use_bf16,
@@ -204,6 +214,13 @@ def main() -> None:
         report_to="none",
         seed=42,
     )
+
+    class FrequentCheckpointCallback(TrainerCallback):
+        def on_step_end(self, args, state, control, **kwargs):
+            if state.global_step > 0 and state.global_step % int(args.save_steps) == 0:
+                control.should_save = True
+            return control
+
     trainer = SFTTrainer(
         model=model,
         args=training_config,
@@ -211,6 +228,7 @@ def main() -> None:
         eval_dataset=eval_dataset,
         processing_class=tokenizer,
         peft_config=lora_config,
+        callbacks=[FrequentCheckpointCallback()],
     )
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
