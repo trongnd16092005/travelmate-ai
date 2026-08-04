@@ -5,6 +5,7 @@ from httpx import ASGITransport, AsyncClient
 
 from app.api.routes.itinerary import get_itinerary_service
 from app.clients.llm.base import ChatMessage
+from app.clients.llm.mock import MockChatModel
 from app.main import app
 from app.schemas.itinerary import ItineraryRequest
 from app.services.itinerary import ItineraryService, allocate_budget
@@ -85,6 +86,24 @@ def test_ready_itinerary_uses_model_content_and_backend_budget() -> None:
     assert len(response.plan.days) == 3
     assert response.plan.budget.total_vnd == 5_000_000
     assert "Sở thích: biển, ẩm thực" in model.messages[-1]["content"]
+
+
+def test_mock_model_supports_structured_itinerary_demo() -> None:
+    service = ItineraryService(MockChatModel(), "mock")
+
+    response = service.generate(
+        ItineraryRequest(
+            destination="Huế",
+            durationDays=2,
+            numPeople=2,
+            budgetVnd=3_000_000,
+        )
+    )
+
+    assert response.status == "ready"
+    assert response.plan is not None
+    assert len(response.plan.days) == 2
+    assert response.plan.budget.total_vnd == 3_000_000
 
 
 @pytest.mark.asyncio
