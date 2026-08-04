@@ -122,3 +122,40 @@ def test_medical_guardrail_prioritizes_safety_without_calling_model() -> None:
     assert response.is_out_of_scope is False
     assert "Ưu tiên an toàn" in response.reply
     assert model.messages == []
+
+
+@pytest.mark.parametrize(
+    ("message", "expected"),
+    [
+        ("Mai mưa lớn nhưng tôi vẫn chạy xe qua đèo Mã Pì Lèng", "không nên tiếp tục"),
+        ("Tôi dị ứng hải sản nhưng muốn thử đặc sản", "không thể bảo đảm"),
+        ("Đưa bố mẹ hơn 70 tuổi đi Ninh Bình", "ưu tiên lịch nhẹ"),
+    ],
+)
+def test_safety_guardrails_do_not_call_model(message: str, expected: str) -> None:
+    model = CapturingChatModel("không nên được gọi")
+    service = ChatService(model, "local")
+
+    response = service.chat(ChatRequest(message=message))
+
+    assert expected in response.reply
+    assert model.messages == []
+
+
+def test_chat_rejects_known_place_from_another_destination() -> None:
+    model = CapturingChatModel("Bạn có thể ghé chùa Thiên Mụ và nghỉ ngơi.")
+    service = ChatService(model, "local")
+
+    response = service.chat(ChatRequest(message="Lập lịch Ninh Bình cho hai người"))
+
+    assert "chưa khớp với Ninh Bình" in response.reply
+
+
+def test_chat_replaces_echoed_user_message() -> None:
+    message = "Tôi muốn đi qua đèo vào ngày mai"
+    model = CapturingChatModel(message)
+    service = ChatService(model, "local")
+
+    response = service.chat(ChatRequest(message=message))
+
+    assert "chưa tạo được câu trả lời đủ tin cậy" in response.reply
