@@ -15,7 +15,10 @@ def split_records(
     test_ratio: float,
     seed: int,
 ) -> dict[str, list[dict[str, Any]]]:
-    """Chia theo nhóm category để hạn chế lệch chủ đề giữa các tập."""
+    """Chia theo category và giữ nguyên splitGroup nếu dataset cung cấp."""
+    if records and all(record.get("splitGroup") for record in records):
+        return split_records_by_group(records, validation_ratio, test_ratio, seed)
+
     grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for record in records:
         grouped[record["category"]].append(record)
@@ -52,6 +55,51 @@ def split_records(
     return splits
 
 
+def split_records_by_group(
+    records: list[dict[str, Any]],
+    validation_ratio: float,
+    test_ratio: float,
+    seed: int,
+) -> dict[str, list[dict[str, Any]]]:
+    grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for record in records:
+        grouped[str(record["splitGroup"])].append(record)
+
+    group_names = sorted(grouped)
+    randomizer = random.Random(seed)
+    randomizer.shuffle(group_names)
+    validation_size = round(len(group_names) * validation_ratio)
+    test_size = round(len(group_names) * test_ratio)
+    if len(group_names) >= 3:
+        if validation_ratio > 0:
+            validation_size = max(1, validation_size)
+        if test_ratio > 0:
+            test_size = max(1, test_size)
+    while validation_size + test_size >= len(group_names):
+        if validation_size >= test_size and validation_size > 0:
+            validation_size -= 1
+        elif test_size > 0:
+            test_size -= 1
+
+    validation_groups = set(group_names[:validation_size])
+    test_groups = set(group_names[validation_size : validation_size + test_size])
+    splits: dict[str, list[dict[str, Any]]] = {
+        "train": [],
+        "validation": [],
+        "test": [],
+    }
+    for group_name, group_records in grouped.items():
+        if group_name in validation_groups:
+            splits["validation"].extend(group_records)
+        elif group_name in test_groups:
+            splits["test"].extend(group_records)
+        else:
+            splits["train"].extend(group_records)
+    for split_records_list in splits.values():
+        randomizer.shuffle(split_records_list)
+    return splits
+
+
 def write_jsonl(path: Path, records: list[dict[str, Any]]) -> None:
     with path.open("w", encoding="utf-8") as output_file:
         for record in records:
@@ -73,6 +121,9 @@ def build_manifest(
             name: {
                 "records": len(records),
                 "categories": dict(sorted(Counter(r["category"] for r in records).items())),
+                "splitGroups": sorted(
+                    {str(record["splitGroup"]) for record in records if record.get("splitGroup")}
+                ),
             }
             for name, records in splits.items()
         },

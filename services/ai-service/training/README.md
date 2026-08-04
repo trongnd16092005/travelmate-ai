@@ -12,6 +12,10 @@ tương ứng với bốn notebook Google Colab:
 4. [`TravelMate_04_Inference_Demo.ipynb`](notebooks/TravelMate_04_Inference_Demo.ipynb):
    nạp adapter và hỏi thử mô hình.
 
+Bộ `training/data/challenge_v1.jsonl` gồm 20 tình huống viết tay và không được
+đưa vào train. Tập này kiểm tra câu hỏi mới, hội thoại nhiều lượt, giới hạn
+giao dịch, dữ liệu thời gian thực, tính an toàn và nguy cơ bịa địa điểm.
+
 Quá trình huấn luyện chính thức nên chạy trên Linux có GPU NVIDIA tối thiểu
 khoảng 16 GB VRAM, chẳng hạn Google Colab hoặc Kaggle. Laptop RTX 4050 6 GB
 chỉ nên dùng để chạy API, giao diện demo hoặc thử suy luận 4-bit.
@@ -69,6 +73,12 @@ python -m training.prepare_dataset \
   --output-dir training/data/processed \
   --seed 42
 ```
+
+Dataset do generator tạo có `splitGroup` theo điểm đến. Script chia dữ liệu sẽ
+giữ toàn bộ một điểm đến trong đúng một tập. Ví dụ, nếu `Đà Nẵng` thuộc
+Validation thì không bản ghi Đà Nẵng nào xuất hiện trong Train hoặc Test, kể cả
+khi chúng thuộc category khác nhau. Dataset cũ không có `splitGroup` vẫn được
+chia theo category để tương thích.
 
 Phân bố hiện tại là 300 lịch trình, 240 ngân sách, 200 chỗ ở, 120 ăn uống,
 120 an toàn/thời tiết, 80 giới hạn dữ liệu thời gian thực, 80 câu ngoài phạm
@@ -187,8 +197,25 @@ python -m training.evaluate_predictions \
   --output training/outputs/evaluation_report.json
 ```
 
+Sau mỗi lần fine-tune, đánh giá riêng bộ challenge:
+
+```bash
+python -m training.generate_predictions \
+  --dataset training/data/challenge_v1.jsonl \
+  --adapter-path artifacts/travelmate-qwen3-4b-lora \
+  --output training/outputs/challenge_predictions.jsonl \
+  --resume
+
+python -m training.evaluate_predictions \
+  --dataset training/data/challenge_v1.jsonl \
+  --predictions training/outputs/challenge_predictions.jsonl \
+  --output training/outputs/challenge_report.json
+```
+
 Điểm tự động không thay thế đánh giá thủ công. Cần đọc từng lịch trình để kiểm
-tra tính hợp lý, độ đúng của thông tin và mức hữu ích đối với người dùng.
+tra tính hợp lý, độ đúng của thông tin và mức hữu ích đối với người dùng. Toàn
+bộ 20 phản hồi challenge cần được chấm độ đúng, hữu ích, an toàn, tự nhiên và
+tuân thủ yêu cầu theo thang 1–5.
 
 ## 4. Dùng adapter trong AI Service
 

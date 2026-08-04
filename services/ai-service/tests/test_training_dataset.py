@@ -61,3 +61,25 @@ def test_written_split_can_be_loaded_and_manifested(tmp_path: Path) -> None:
     assert manifest["totalRecords"] == 4
     assert len(manifest["sourceSha256"]) == 64
     json.dumps(manifest)
+
+
+def test_split_group_never_leaks_between_sets() -> None:
+    records = [
+        {
+            **make_record(f"{category}-{destination}-{index}", category),
+            "splitGroup": destination,
+        }
+        for destination in ("Đà Nẵng", "Huế", "Hội An", "Đà Lạt", "Nha Trang")
+        for category in ("itinerary", "budget")
+        for index in range(3)
+    ]
+
+    splits = split_records(records, validation_ratio=0.2, test_ratio=0.2, seed=42)
+    group_sets = [
+        {record["splitGroup"] for record in split_records_list}
+        for split_records_list in splits.values()
+    ]
+
+    assert all(
+        left.isdisjoint(right) for left in group_sets for right in group_sets if left is not right
+    )

@@ -120,7 +120,12 @@ def main() -> None:
     import torch
     from datasets import load_dataset
     from peft import LoraConfig
-    from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig, TrainerCallback
+    from transformers import (
+        AutoModelForCausalLM,
+        AutoTokenizer,
+        BitsAndBytesConfig,
+        TrainerCallback,
+    )
     from trl import SFTConfig, SFTTrainer
 
     if not args.smoke_test and not torch.cuda.is_available():

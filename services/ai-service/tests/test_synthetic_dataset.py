@@ -34,6 +34,7 @@ def test_synthetic_dataset_has_unique_ids_and_prompts() -> None:
     assert Counter(record["reviewBatch"] for record in records) == {
         batch: 100 for batch in range(1, 13)
     }
+    assert len({record["splitGroup"] for record in records}) == 20
 
 
 def test_every_synthetic_record_matches_conversation_schema() -> None:

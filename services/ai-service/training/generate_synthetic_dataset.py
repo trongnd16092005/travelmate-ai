@@ -104,6 +104,7 @@ def make_record(
     category: str,
     user: str,
     assistant: str,
+    split_group: str,
     behaviors: list[str] | None = None,
 ) -> dict[str, Any]:
     return {
@@ -111,6 +112,7 @@ def make_record(
         "category": category,
         "expectedBehaviors": behaviors or [],
         "reviewStatus": "synthetic_draft_v1",
+        "splitGroup": split_group,
         "messages": [
             {"role": "system", "content": SYSTEM_MESSAGE},
             {"role": "user", "content": user},
@@ -127,11 +129,12 @@ def generate_records() -> list[dict[str, Any]]:
         category: str,
         user: str,
         assistant: str,
+        split_group: str,
         behaviors: list[str] | None = None,
     ) -> None:
         counters[category] += 1
         record_id = f"{category}-{counters[category]:04d}"
-        records.append(make_record(record_id, category, user, assistant, behaviors))
+        records.append(make_record(record_id, category, user, assistant, split_group, behaviors))
 
     groups = (
         "một người",
@@ -154,7 +157,7 @@ def generate_records() -> list[dict[str, Any]]:
                     f"Gợi ý cho {group}: {'; '.join(day_plans)}. Mỗi ngày nên chừa thời gian nghỉ "
                     "và di chuyển. Bạn đi ngày nào và dự kiến tổng ngân sách bao nhiêu?"
                 )
-                add("itinerary", user, assistant, ["ask_clarification"])
+                add("itinerary", user, assistant, destination, ["ask_clarification"])
 
     for destination in DESTINATIONS:
         for days in (2, 3, 4):
@@ -172,7 +175,7 @@ def generate_records() -> list[dict[str, Any]]:
                     f"{format_vnd(total * 15 // 100)}. Đây là khung tham khảo; cần kiểm tra giá "
                     "thực tế và xác định ngân sách đã gồm chi phí đến điểm du lịch hay chưa."
                 )
-                add("budget", user, assistant, ["realtime_limit"])
+                add("budget", user, assistant, destination, ["realtime_limit"])
 
     stay_preferences = (
         "gần trung tâm",
@@ -198,6 +201,7 @@ def generate_records() -> list[dict[str, Any]]:
                     "accommodation",
                     user,
                     assistant,
+                    destination,
                     ["ask_clarification", "realtime_limit"],
                 )
 
@@ -216,7 +220,7 @@ def generate_records() -> list[dict[str, Any]]:
                     "rõ thành phần món và báo dị ứng nếu có. Giá, địa chỉ và giờ mở cửa cần kiểm "
                     "tra trên nguồn hiện tại trước khi đến."
                 )
-                add("food", user, assistant, ["realtime_limit"])
+                add("food", user, assistant, destination, ["realtime_limit"])
 
     activities = ("đi bộ đường dài", "tự đi xe máy", "đưa trẻ nhỏ đi tham quan")
     conditions = ("mùa mưa", "thời tiết nắng nóng")
@@ -230,7 +234,7 @@ def generate_records() -> list[dict[str, Any]]:
                     "hợp và một phương án dự phòng. Không tiếp tục hoạt động nếu điều kiện không an "
                     "toàn hoặc có khuyến cáo hạn chế di chuyển."
                 )
-                add("safety_weather", user, assistant, ["safety_caveat"])
+                add("safety_weather", user, assistant, destination, ["safety_caveat"])
 
     for destination in DESTINATIONS:
         realtime_cases = (
@@ -268,7 +272,13 @@ def generate_records() -> list[dict[str, Any]]:
             ),
         )
         for user, assistant in realtime_cases:
-            add("realtime_limit", user, assistant, ["realtime_limit", "ask_clarification"])
+            add(
+                "realtime_limit",
+                user,
+                assistant,
+                destination,
+                ["realtime_limit", "ask_clarification"],
+            )
 
     out_of_scope_tasks = (
         "viết chương trình sắp xếp mảng Java",
@@ -283,7 +293,7 @@ def generate_records() -> list[dict[str, Any]]:
                 f"[OUT_OF_SCOPE] Yêu cầu “{task}” không thuộc phạm vi trợ lý du lịch. Mình có thể "
                 f"giúp bạn lập lịch trình, dự toán chi phí hoặc chuẩn bị chuyến đi {destination}."
             )
-            add("out_of_scope", user, assistant, ["out_of_scope_marker"])
+            add("out_of_scope", user, assistant, destination, ["out_of_scope_marker"])
 
     action_requests = (
         "hủy toàn bộ lịch trình cũ",
@@ -297,7 +307,7 @@ def generate_records() -> list[dict[str, Any]]:
                 f"Mình không tự {action} cho chuyến đi {destination}. Mình có thể chuẩn bị phương "
                 "án và liên kết phù hợp, sau đó bạn cần xem lại và xác nhận trong ứng dụng."
             )
-            add("action_boundary", user, assistant, ["no_transaction"])
+            add("action_boundary", user, assistant, destination, ["no_transaction"])
 
     assert len(records) == 1200
     for index, record in enumerate(records):
