@@ -19,6 +19,8 @@ Health check: `http://localhost:8000/internal/v1/health`
 
 Chat API: `POST http://localhost:8000/internal/v1/ai/chat`
 
+Itinerary API: `POST http://localhost:8000/internal/v1/ai/itineraries/generate`
+
 Ví dụ request:
 
 ```json
@@ -30,6 +32,24 @@ Ví dụ request:
     "budgetVnd": 5000000,
     "numPeople": 2
   }
+}
+```
+
+Itinerary API kiểm tra các trường bắt buộc trước khi gọi mô hình. Nếu thiếu
+thông tin, API trả `status=needs_clarification` cùng danh sách câu hỏi. Khi đủ
+điểm đến, số ngày, số người và ngân sách, API trả `status=ready` với lịch trình
+JSON. Phần chia ngân sách được Python tính lại để tổng luôn đúng bằng ngân sách
+người dùng cung cấp.
+
+Ví dụ request:
+
+```json
+{
+  "destination": "Đà Nẵng",
+  "durationDays": 3,
+  "numPeople": 2,
+  "budgetVnd": 5000000,
+  "preferences": ["biển", "ẩm thực"]
 }
 ```
 
