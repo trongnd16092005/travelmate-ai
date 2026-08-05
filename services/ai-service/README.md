@@ -85,3 +85,13 @@ Trong `.env`, đặt `LLM_PROVIDER=local`. Candidate mặc định là adapter v
 grounding tại `artifacts/travelmate-qwen3-4b-lora-v3-grounded`; trọng số cần có
 trên từng máy và không được commit lên Git. Hướng dẫn huấn luyện nằm tại
 [`training/README.md`](training/README.md).
+
+Nếu WSL rơi về `networkingMode VirtioProxy` và không forward được cổng sang
+Windows, chạy AI Service trong WSL ở cổng `8002`, rồi mở proxy trên Windows:
+
+```powershell
+python scripts/wsl_demo_proxy.py --port 8001 --target-port 8002
+```
+
+Expo Web tiếp tục gọi `http://localhost:8001/internal/v1`. Qwen được giữ trong
+GPU của WSL; proxy chỉ chuyển tiếp request và không tải lại model mỗi lượt.
