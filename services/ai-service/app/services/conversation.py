@@ -55,7 +55,7 @@ def update_memory(memory: ConversationMemory, text: str) -> ConversationMemory:
         if 1 <= value <= 50:
             updates["num_people"] = value
 
-    duration = _last_match(r"\b(\d{1,2})\s*ngay\b", normalized)
+    duration = _last_match(r"\b(\d{1,2})\s*(?:ngay|hom)\b", normalized)
     if duration is not None:
         value = int(duration)
         if 1 <= value <= 60:

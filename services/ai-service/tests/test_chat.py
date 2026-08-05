@@ -89,6 +89,37 @@ def test_chat_service_injects_trip_context_and_history() -> None:
     assert model.messages[-1] == {"role": "user", "content": "Ngày thứ hai nên đi đâu?"}
 
 
+def test_chat_only_sends_four_recent_raw_messages_to_model() -> None:
+    model = CapturingChatModel()
+    service = ChatService(model, "local")
+    request = ChatRequest.model_validate(
+        {
+            "message": "Tiếp tục giúp tôi",
+            "history": [
+                {"role": "user", "content": "tin cũ 1"},
+                {"role": "assistant", "content": "trả lời cũ 1"},
+                {"role": "user", "content": "tin cũ 2"},
+                {"role": "assistant", "content": "trả lời cũ 2"},
+                {"role": "user", "content": "tin mới"},
+                {"role": "assistant", "content": "trả lời mới"},
+            ],
+        }
+    )
+
+    service.chat(request)
+
+    raw_contents = [message["content"] for message in model.messages]
+    assert "tin cũ 1" not in raw_contents
+    assert "trả lời cũ 1" not in raw_contents
+    assert raw_contents[-5:] == [
+        "tin cũ 2",
+        "trả lời cũ 2",
+        "tin mới",
+        "trả lời mới",
+        "Tiếp tục giúp tôi",
+    ]
+
+
 def test_chat_memory_uses_latest_user_details_instead_of_form_defaults() -> None:
     model = CapturingChatModel("Mình đã ghi nhận thông tin mới.")
     service = ChatService(model, "local")
@@ -109,9 +140,9 @@ def test_chat_memory_uses_latest_user_details_instead_of_form_defaults() -> None
         }
     )
 
-    service.chat(request)
+    messages = service.build_messages(request)
 
-    memory_message = model.messages[1]["content"]
+    memory_message = messages[1]["content"]
     assert "Khu vực mong muốn: Miền Trung" in memory_message
     assert "Điểm đến: Huế" in memory_message
     assert "Thời lượng: 3 ngày" in memory_message
@@ -137,8 +168,8 @@ def test_chat_replaces_repeated_reply_with_next_missing_question() -> None:
     response = service.chat(request)
 
     assert (
-        response.reply
-        == "Mình đã ghi nhận số người và thời lượng. Tổng ngân sách dự kiến là bao nhiêu?"
+        response.reply == "Mình đã ghi nhận chuyến Huế 3 ngày cho 6 người. "
+        "Tổng ngân sách dự kiến là bao nhiêu?"
     )
 
 
@@ -164,6 +195,84 @@ def test_chat_repeated_reply_can_recommend_central_destinations() -> None:
     assert "6 người" in response.reply
 
 
+def test_chat_guides_region_request_without_calling_model() -> None:
+    model = CapturingChatModel("không nên được gọi")
+    service = ChatService(model, "local")
+
+    response = service.chat(ChatRequest(message="Gợi ý điểm đến miền Trung cho 6 người"))
+
+    assert "Huế" in response.reply
+    assert "Đà Nẵng–Hội An" in response.reply
+    assert "6 người" in response.reply
+    assert model.messages == []
+
+
+def test_chat_region_planning_request_asks_for_preference_first() -> None:
+    model = CapturingChatModel("không nên được gọi")
+    service = ChatService(model, "local")
+
+    response = service.chat(ChatRequest(message="Tôi cần chuyến miền Trung cho 6 người"))
+
+    assert "Miền Trung cho 6 người" in response.reply
+    assert "biển, văn hóa hay thiên nhiên" in response.reply
+    assert model.messages == []
+
+
+def test_chat_guides_short_slot_reply_to_next_missing_field() -> None:
+    model = CapturingChatModel("không nên được gọi")
+    service = ChatService(model, "local")
+    request = ChatRequest.model_validate(
+        {
+            "message": "Huế, 3 ngày",
+            "history": [
+                {"role": "user", "content": "Tôi cần chuyến miền Trung cho 6 người"},
+                {"role": "assistant", "content": "Bạn có thể cân nhắc Huế."},
+            ],
+        }
+    )
+
+    response = service.chat(request)
+
+    assert response.reply == (
+        "Mình đã ghi nhận chuyến Huế 3 ngày cho 6 người. Tổng ngân sách dự kiến là bao nhiêu?"
+    )
+    assert model.messages == []
+
+
+def test_chat_understands_hom_as_trip_duration() -> None:
+    model = CapturingChatModel("không nên được gọi")
+    service = ChatService(model, "local")
+
+    response = service.chat(ChatRequest(message="Tầm 3 hôm ở Huế, có 2 người"))
+
+    assert response.reply == (
+        "Mình đã ghi nhận chuyến Huế 3 ngày cho 2 người. Tổng ngân sách dự kiến là bao nhiêu?"
+    )
+    assert model.messages == []
+
+
+def test_chat_replaces_question_that_asks_two_missing_fields() -> None:
+    model = CapturingChatModel(
+        "Mình đã ghi nhận 3 ngày và 2 người. "
+        "Bạn khởi hành ngày nào và dự kiến tổng ngân sách bao nhiêu?"
+    )
+    service = ChatService(model, "local")
+    request = ChatRequest.model_validate(
+        {
+            "message": "Bạn tư vấn tiếp giúp mình",
+            "history": [
+                {"role": "user", "content": "Tầm 3 hôm ở Huế, có 2 người"},
+                {"role": "assistant", "content": "Mình đã ghi nhận."},
+            ],
+        }
+    )
+
+    response = service.chat(request)
+
+    assert response.reply.endswith("Tổng ngân sách dự kiến là bao nhiêu?")
+    assert "khởi hành" not in response.reply
+
+
 def test_chat_replaces_missing_claim_that_conflicts_with_memory() -> None:
     model = CapturingChatModel(
         "Mình chưa có thông tin điểm đến, số ngày hoặc ngân sách cho chuyến này."
@@ -185,7 +294,7 @@ def test_chat_replaces_missing_claim_that_conflicts_with_memory() -> None:
 
     assert "Huế 3 ngày" in response.reply
     assert "6 người" in response.reply
-    assert "10,000,000 VND" in response.reply
+    assert "10.000.000 VND" in response.reply
 
 
 def test_chat_service_removes_out_of_scope_marker() -> None:

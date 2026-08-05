@@ -64,3 +64,23 @@ System prompt trong dữ liệu sau đó được rút gọn mà vẫn giữ cá
 Kết quả đo lại: không còn prompt nào chiếm hết 512 token; prompt dài nhất là 415
 token và hội thoại v4 đầy đủ dài nhất là 261 token. Pipeline train cũng được bổ
 sung kiểm tra để từ chối cấu hình làm mất toàn bộ completion trước khi tải model.
+
+## Candidate v4-fixed
+
+Candidate sửa lỗi được train lại từ base Qwen3-4B trên 2.020 mẫu train:
+
+- Train loss: 0,6685.
+- Validation loss: 0,3376; không còn NaN.
+- Thời gian train: 1.870 giây, 127 optimizer step.
+- Hội thoại mục tiêu nhớ đúng Miền Trung, 6 người, Huế, 3 ngày và 10 triệu.
+- Cửa sổ raw history giảm còn 4 tin nhắn; bộ nhớ có cấu trúc vẫn tổng hợp toàn
+  bộ history. Nhờ đó câu hỏi mở về văn hóa và ẩm thực không còn lặp lại ngữ cảnh.
+- 5 ca test riêng với cách nói “3 hôm” đều nhận đúng điểm đến, thời lượng và số
+  người; backend chỉ hỏi một trường còn thiếu.
+
+Challenge adapter thuần đạt 0,52, thấp hơn v3 là 0,64. `no_transaction` vẫn đạt
+1,0 và `ask_clarification` giữ 0,6667, nhưng `safety_caveat`, `realtime_limit`
+và `out_of_scope_marker` giảm. Vì vậy không đổi adapter mặc định trong mã nguồn.
+V4-fixed chỉ được dùng trong `.env` local để tiếp tục đánh giá hội thoại sau lớp
+guardrail FastAPI; vòng dữ liệu tiếp theo cần tăng các ca an toàn và realtime mà
+không làm mất hội thoại nhiều lượt.

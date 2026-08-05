@@ -16,6 +16,7 @@ from app.services.conversation import (
     ConversationMemory,
     build_conversation_memory,
     format_conversation_memory,
+    update_memory,
 )
 
 OUT_OF_SCOPE_MARKER = "[OUT_OF_SCOPE]"
@@ -86,6 +87,14 @@ class ChatService:
                 reply=reply,
                 isOutOfScope=is_out_of_scope,
                 suggestedQuestions=self._suggest_questions(memory),
+                provider=self.provider,
+            )
+        guided_reply = self._guided_reply(request, memory)
+        if guided_reply is not None:
+            return ChatResponse(
+                reply=guided_reply,
+                is_out_of_scope=False,
+                suggested_questions=self._suggest_questions(memory),
                 provider=self.provider,
             )
         messages = self.build_messages(request)
@@ -231,22 +240,110 @@ class ChatService:
                     "Đà Nẵng–Hội An nếu muốn kết hợp biển và phố cổ, hoặc Quảng Bình "
                     "nếu thích thiên nhiên. Bạn thích trải nghiệm theo hướng nào nhất?"
                 )
+            if memory.region == "Miền Bắc":
+                return (
+                    "Ở Miền Bắc, bạn có thể cân nhắc Hà Nội nếu thích văn hóa đô thị, "
+                    "Ninh Bình nếu thích cảnh quan thiên nhiên, hoặc Sa Pa nếu muốn trải "
+                    "nghiệm vùng núi. Bạn thích hướng nào nhất?"
+                )
+            if memory.region == "Miền Nam":
+                return (
+                    "Ở Miền Nam, bạn có thể cân nhắc TP. Hồ Chí Minh cho trải nghiệm đô thị, "
+                    "Phú Quốc nếu thích biển, hoặc Cần Thơ nếu muốn khám phá miền sông nước. "
+                    "Bạn thích hướng nào nhất?"
+                )
+            if memory.region == "Tây Nguyên":
+                return (
+                    "Ở Tây Nguyên, bạn có thể cân nhắc Đà Lạt nếu thích khí hậu mát mẻ hoặc "
+                    "Buôn Ma Thuột nếu quan tâm văn hóa và cà phê. Bạn thích hướng nào nhất?"
+                )
             return "Bạn muốn mình gợi ý điểm đến theo khu vực hoặc loại trải nghiệm nào?"
         if not memory.duration_days:
             return f"Mình đã ghi nhận điểm đến {memory.destination}. Bạn dự định đi bao nhiêu ngày?"
         if not memory.num_people:
             return "Mình đã ghi nhận thời lượng chuyến đi. Chuyến này có bao nhiêu người?"
         if memory.budget_vnd is None:
-            return "Mình đã ghi nhận số người và thời lượng. Tổng ngân sách dự kiến là bao nhiêu?"
+            return (
+                f"Mình đã ghi nhận chuyến {memory.destination} {memory.duration_days} ngày cho "
+                f"{memory.num_people} người. Tổng ngân sách dự kiến là bao nhiêu?"
+            )
+        budget = f"{memory.budget_vnd:,}".replace(",", ".")
         return (
             f"Mình đã ghi nhận chuyến {memory.destination} {memory.duration_days} ngày cho "
-            f"{memory.num_people} người với ngân sách {memory.budget_vnd:,} VND. "
+            f"{memory.num_people} người với ngân sách {budget} VND. "
             "Ngân sách này đã gồm chi phí di chuyển đến điểm đến chưa?"
         )
+
+    @classmethod
+    def _guided_reply(
+        cls,
+        request: ChatRequest,
+        memory: ConversationMemory,
+    ) -> str | None:
+        normalized = normalize_lookup_key(request.message)
+        recommendation_intent = (
+            "goi y" in normalized and "diem den" in normalized
+        ) or "nen di dau" in normalized
+        planning_intent = any(
+            term in normalized
+            for term in (
+                "chuyen di",
+                "can chuyen",
+                "du lich",
+                "muon di",
+                "can di",
+                "di tai",
+            )
+        )
+        if memory.region and not memory.destination:
+            if recommendation_intent:
+                return cls._progress_reply(memory)
+            if planning_intent:
+                group = f" cho {memory.num_people} người" if memory.num_people else ""
+                return (
+                    f"Mình đã ghi nhận chuyến {memory.region}{group}. Bạn muốn ưu tiên biển, "
+                    "văn hóa hay thiên nhiên để mình gợi ý điểm đến phù hợp?"
+                )
+
+        supplied = update_memory(ConversationMemory(), request.message)
+        supplied_slot = any(
+            value is not None
+            for value in (
+                supplied.destination,
+                supplied.duration_days,
+                supplied.num_people,
+                supplied.budget_vnd,
+            )
+        )
+        explicit_intent = any(
+            term in normalized
+            for term in (
+                "goi y",
+                "lich trinh",
+                "lap lich",
+                "ngan sach",
+                "nen ",
+                "di dau",
+                "an gi",
+            )
+        )
+        if supplied_slot and len(normalized.split()) <= 10 and not explicit_intent:
+            return cls._progress_reply(memory)
+        return None
 
     @staticmethod
     def _asks_for_known_information(reply: str, memory: ConversationMemory) -> bool:
         normalized = normalize_lookup_key(reply)
+        question_topics = (
+            ("khoi hanh", "ngay di"),
+            ("ngan sach", "chi phi"),
+            ("bao nhieu ngay", "may ngay", "thoi luong"),
+            ("bao nhieu nguoi", "may nguoi", "bao nhieu khach"),
+            ("muon di dau", "diem den nao"),
+        )
+        if sum(any(term in normalized for term in topic) for topic in question_topics) > 1:
+            return True
+
         missing_claim = any(
             term in normalized for term in ("chua co", "con thieu", "thieu thong tin")
         )
@@ -306,7 +403,7 @@ class ChatService:
                     "content": memory_text,
                 }
             )
-        messages.extend(message.model_dump() for message in request.history[-10:])
+        messages.extend(message.model_dump() for message in request.history[-4:])
         messages.append({"role": "user", "content": request.message})
         return messages
 
