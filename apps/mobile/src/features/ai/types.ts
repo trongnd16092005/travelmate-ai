@@ -9,7 +9,7 @@ export type ChatMessage = {
 export type ChatHistoryMessage = Pick<ChatMessage, 'role' | 'content'>;
 
 export type TripContext = {
-  destination: string;
+  destination?: string;
   startDate?: string;
   endDate?: string;
   budgetVnd?: number;

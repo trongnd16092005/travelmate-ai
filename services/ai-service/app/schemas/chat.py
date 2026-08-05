@@ -19,7 +19,7 @@ class ChatHistoryMessage(ApiModel):
 
 
 class TripContext(ApiModel):
-    destination: str = Field(min_length=1, max_length=120)
+    destination: str | None = Field(default=None, min_length=1, max_length=120)
     start_date: date | None = None
     end_date: date | None = None
     budget_vnd: int | None = Field(default=None, ge=0)

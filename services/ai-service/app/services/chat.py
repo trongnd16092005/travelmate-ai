@@ -11,7 +11,12 @@ from app.knowledge.destinations import (
     resolve_destination,
 )
 from app.prompts.chat import CHAT_SYSTEM_PROMPT
-from app.schemas.chat import ChatRequest, ChatResponse, TripContext
+from app.schemas.chat import ChatRequest, ChatResponse
+from app.services.conversation import (
+    ConversationMemory,
+    build_conversation_memory,
+    format_conversation_memory,
+)
 
 OUT_OF_SCOPE_MARKER = "[OUT_OF_SCOPE]"
 
@@ -73,18 +78,19 @@ class ChatService:
         self.provider = provider
 
     def chat(self, request: ChatRequest) -> ChatResponse:
+        memory = build_conversation_memory(request)
         guardrail = self._guardrail_reply(request.message)
         if guardrail is not None:
             reply, is_out_of_scope = guardrail
             return ChatResponse(
                 reply=reply,
                 isOutOfScope=is_out_of_scope,
-                suggestedQuestions=self._suggest_questions(request.trip_context),
+                suggestedQuestions=self._suggest_questions(memory),
                 provider=self.provider,
             )
         messages = self.build_messages(request)
         raw_reply = self.model.generate(messages).strip()
-        fallback = self._validate_model_reply(request, raw_reply)
+        fallback = self._validate_model_reply(request, raw_reply, memory)
         if fallback is not None:
             raw_reply = fallback
         is_out_of_scope = raw_reply.startswith(OUT_OF_SCOPE_MARKER)
@@ -92,7 +98,7 @@ class ChatService:
         return ChatResponse(
             reply=reply,
             is_out_of_scope=is_out_of_scope,
-            suggested_questions=self._suggest_questions(request.trip_context),
+            suggested_questions=self._suggest_questions(memory),
             provider=self.provider,
         )
 
@@ -154,7 +160,12 @@ class ChatService:
         return None
 
     @classmethod
-    def _validate_model_reply(cls, request: ChatRequest, reply: str) -> str | None:
+    def _validate_model_reply(
+        cls,
+        request: ChatRequest,
+        reply: str,
+        memory: ConversationMemory,
+    ) -> str | None:
         if not reply or normalize_lookup_key(reply) == normalize_lookup_key(request.message):
             return (
                 "Mình chưa tạo được câu trả lời đủ tin cậy cho yêu cầu này. Bạn hãy bổ sung điểm "
@@ -162,7 +173,22 @@ class ChatService:
                 "được kiểm tra từ nguồn hiện tại trước khi quyết định."
             )
 
-        destination = cls._target_destination(request)
+        previous_assistant = next(
+            (
+                message.content
+                for message in reversed(request.history)
+                if message.role == "assistant"
+            ),
+            None,
+        )
+        if previous_assistant and normalize_lookup_key(reply) == normalize_lookup_key(
+            previous_assistant
+        ):
+            return cls._progress_reply(memory)
+        if cls._asks_for_known_information(reply, memory):
+            return cls._progress_reply(memory)
+
+        destination = cls._target_destination(memory)
         if destination is None:
             return None
         normalized_reply = normalize_lookup_key(reply)
@@ -191,22 +217,62 @@ class ChatService:
             for value in (destination.name, *destination.aliases)
         )
 
-    @classmethod
-    def _target_destination(cls, request: ChatRequest) -> DestinationKnowledge | None:
-        if request.trip_context:
-            destination = resolve_destination(request.trip_context.destination)
-            if destination is not None:
-                return destination
+    @staticmethod
+    def _target_destination(memory: ConversationMemory) -> DestinationKnowledge | None:
+        return resolve_destination(memory.destination) if memory.destination else None
 
-        normalized_message = normalize_lookup_key(request.message)
-        matches: list[tuple[int, DestinationKnowledge]] = []
-        for destination in DESTINATIONS:
-            for value in (destination.name, *destination.aliases):
-                key = normalize_lookup_key(value)
-                index = normalized_message.rfind(key)
-                if index >= 0 and cls._contains_phrase(normalized_message, key):
-                    matches.append((index, destination))
-        return max(matches, key=lambda match: match[0])[1] if matches else None
+    @staticmethod
+    def _progress_reply(memory: ConversationMemory) -> str:
+        if not memory.destination:
+            if memory.region == "Miền Trung":
+                group = f" cho nhóm {memory.num_people} người" if memory.num_people else ""
+                return (
+                    f"Ở Miền Trung{group}, bạn có thể cân nhắc Huế nếu thích văn hóa, "
+                    "Đà Nẵng–Hội An nếu muốn kết hợp biển và phố cổ, hoặc Quảng Bình "
+                    "nếu thích thiên nhiên. Bạn thích trải nghiệm theo hướng nào nhất?"
+                )
+            return "Bạn muốn mình gợi ý điểm đến theo khu vực hoặc loại trải nghiệm nào?"
+        if not memory.duration_days:
+            return f"Mình đã ghi nhận điểm đến {memory.destination}. Bạn dự định đi bao nhiêu ngày?"
+        if not memory.num_people:
+            return "Mình đã ghi nhận thời lượng chuyến đi. Chuyến này có bao nhiêu người?"
+        if memory.budget_vnd is None:
+            return "Mình đã ghi nhận số người và thời lượng. Tổng ngân sách dự kiến là bao nhiêu?"
+        return (
+            f"Mình đã ghi nhận chuyến {memory.destination} {memory.duration_days} ngày cho "
+            f"{memory.num_people} người với ngân sách {memory.budget_vnd:,} VND. "
+            "Ngân sách này đã gồm chi phí di chuyển đến điểm đến chưa?"
+        )
+
+    @staticmethod
+    def _asks_for_known_information(reply: str, memory: ConversationMemory) -> bool:
+        normalized = normalize_lookup_key(reply)
+        missing_claim = any(
+            term in normalized for term in ("chua co", "con thieu", "thieu thong tin")
+        )
+        if missing_claim:
+            known_labels = (
+                (memory.destination, ("diem den",)),
+                (memory.duration_days, ("so ngay", "thoi luong")),
+                (memory.num_people, ("so nguoi", "so khach")),
+                (memory.budget_vnd, ("ngan sach",)),
+            )
+            if any(
+                value is not None and any(label in normalized for label in labels)
+                for value, labels in known_labels
+            ):
+                return True
+
+        known_questions = (
+            (memory.destination, ("muon di dau", "diem den nao")),
+            (memory.duration_days, ("bao nhieu ngay", "may ngay")),
+            (memory.num_people, ("bao nhieu nguoi", "may nguoi", "bao nhieu khach")),
+            (memory.budget_vnd, ("ngan sach bao nhieu", "bao nhieu ngan sach")),
+        )
+        return any(
+            value is not None and any(question in normalized for question in questions)
+            for value, questions in known_questions
+        )
 
     @staticmethod
     def _contains_phrase(normalized_text: str, normalized_phrase: str) -> bool:
@@ -232,11 +298,12 @@ class ChatService:
 
     def build_messages(self, request: ChatRequest) -> list[ChatMessage]:
         messages: list[ChatMessage] = [{"role": "system", "content": CHAT_SYSTEM_PROMPT}]
-        if request.trip_context:
+        memory_text = format_conversation_memory(build_conversation_memory(request))
+        if memory_text:
             messages.append(
                 {
                     "role": "system",
-                    "content": self._format_trip_context(request.trip_context),
+                    "content": memory_text,
                 }
             )
         messages.extend(message.model_dump() for message in request.history[-10:])
@@ -244,25 +311,18 @@ class ChatService:
         return messages
 
     @staticmethod
-    def _format_trip_context(context: TripContext) -> str:
-        details = [f"Điểm đến: {context.destination}"]
-        if context.start_date:
-            details.append(f"Ngày bắt đầu: {context.start_date.isoformat()}")
-        if context.end_date:
-            details.append(f"Ngày kết thúc: {context.end_date.isoformat()}")
-        if context.budget_vnd is not None:
-            details.append(f"Ngân sách: {context.budget_vnd:,} VND")
-        if context.num_people is not None:
-            details.append(f"Số người: {context.num_people}")
-        return "[TRIP_CONTEXT]\n" + "\n".join(details) + "\n[/TRIP_CONTEXT]"
-
-    @staticmethod
-    def _suggest_questions(context: TripContext | None) -> list[str]:
-        if context:
+    def _suggest_questions(memory: ConversationMemory) -> list[str]:
+        if memory.destination:
             return [
-                f"Nên đi đâu ở {context.destination}?",
+                f"Nên đi đâu ở {memory.destination}?",
                 "Ngân sách nên chia như thế nào?",
                 "Cần chuẩn bị những gì cho chuyến đi?",
+            ]
+        if memory.region:
+            return [
+                f"Gợi ý điểm đến ở {memory.region}",
+                "Nơi nào phù hợp đi theo nhóm?",
+                "Nên đi biển hay tham quan văn hóa?",
             ]
         return [
             "Bạn muốn đi đâu?",

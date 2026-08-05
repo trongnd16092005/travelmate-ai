@@ -57,9 +57,9 @@ export default function AiScreen() {
   const listRef = useRef<FlatList<ChatMessage>>(null);
   const [messages, setMessages] = useState(initialMessages);
   const [input, setInput] = useState('');
-  const [destination, setDestination] = useState('Đà Nẵng');
-  const [budget, setBudget] = useState('5000000');
-  const [numPeople, setNumPeople] = useState('2');
+  const [destination, setDestination] = useState('');
+  const [budget, setBudget] = useState('');
+  const [numPeople, setNumPeople] = useState('');
   const [suggestions, setSuggestions] = useState(initialSuggestions);
   const [provider, setProvider] = useState<ChatResponse['provider'] | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -88,17 +88,23 @@ export default function AiScreen() {
     const content = value.trim();
     if (!content || mutation.isPending) return;
 
+    const destinationValue = destination.trim();
+    const budgetValue = budget ? Number(budget) : undefined;
+    const numPeopleValue = numPeople ? Number(numPeople) : undefined;
+    const hasTripContext = Boolean(destinationValue || budgetValue || numPeopleValue);
     const request: ChatRequest = {
       message: content,
       history: messages.slice(-10).map(({ role, content: historyContent }) => ({
         role,
         content: historyContent,
       })),
-      tripContext: {
-        destination: destination.trim() || 'Chưa xác định',
-        budgetVnd: budget ? Number(budget) : undefined,
-        numPeople: numPeople ? Number(numPeople) : undefined,
-      },
+      tripContext: hasTripContext
+        ? {
+            destination: destinationValue || undefined,
+            budgetVnd: budgetValue,
+            numPeople: numPeopleValue,
+          }
+        : undefined,
     };
 
     setMessages((current) => [...current, createMessage('user', content)]);
@@ -109,6 +115,9 @@ export default function AiScreen() {
 
   function resetChat() {
     setMessages(initialMessages);
+    setDestination('');
+    setBudget('');
+    setNumPeople('');
     setSuggestions(initialSuggestions);
     setProvider(null);
     setErrorMessage(null);
