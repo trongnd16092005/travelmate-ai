@@ -6,7 +6,12 @@ import pytest
 from training.build_reinforcement_v2 import EXPECTED_COUNTS, build_records
 from training.evaluate_predictions import evaluate_records
 from training.prepare_dataset import write_jsonl
-from training.train_qlora import build_run_summary, to_prompt_completion, validate_training_files
+from training.train_qlora import (
+    build_run_summary,
+    find_truncated_completion_ids,
+    to_prompt_completion,
+    validate_training_files,
+)
 
 
 def make_record(record_id: str, behavior: str) -> dict:
@@ -28,6 +33,37 @@ def test_to_prompt_completion_only_trains_assistant_turn() -> None:
 
     assert formatted["prompt"] == record["messages"][:-1]
     assert formatted["completion"] == [record["messages"][-1]]
+
+
+def test_token_budget_guard_detects_completion_cutoff() -> None:
+    class CharacterTokenizer:
+        @staticmethod
+        def apply_chat_template(messages, **kwargs):
+            return "|".join(message["content"] for message in messages)
+
+        @staticmethod
+        def __call__(value, **kwargs):
+            return {"input_ids": list(value)}
+
+    records = [
+        {
+            "id": "fits",
+            "messages": [
+                {"role": "user", "content": "ngắn"},
+                {"role": "assistant", "content": "được"},
+            ],
+        },
+        {
+            "id": "truncated",
+            "messages": [
+                {"role": "system", "content": "x" * 20},
+                {"role": "user", "content": "dài"},
+                {"role": "assistant", "content": "không được cắt"},
+            ],
+        },
+    ]
+
+    assert find_truncated_completion_ids(records, CharacterTokenizer(), 10) == ["truncated"]
 
 
 def test_behavior_evaluation_reports_pass_rates() -> None:

@@ -3,7 +3,7 @@ from copy import deepcopy
 
 import pytest
 
-from training.build_conversation_v4 import audit_records, build_records
+from training.build_conversation_v4 import TRAINING_SYSTEM_PROMPT, audit_records, build_records
 
 
 def test_conversation_v4_has_expected_multi_turn_distribution() -> None:
@@ -37,7 +37,14 @@ def test_conversation_v4_assistant_style_is_plain_and_concise() -> None:
     assert len(responses) == 480
     assert all(len(response) <= 320 for response in responses)
     assert all(response.count("?") <= 1 for response in responses)
-    assert all(not any(marker in response for marker in ("**", "###", "```")) for response in responses)
+    assert all(
+        not any(marker in response for marker in ("**", "###", "```")) for response in responses
+    )
+
+
+def test_conversation_v4_uses_compact_training_prompt() -> None:
+    assert len(TRAINING_SYSTEM_PROMPT) < 500
+    assert "không hỏi lại dữ liệu đã có" in TRAINING_SYSTEM_PROMPT
 
 
 def test_conversation_v4_audit_rejects_markdown() -> None:

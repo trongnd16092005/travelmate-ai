@@ -90,6 +90,22 @@ def to_prompt_completion(example: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def find_truncated_completion_ids(
+    records: list[dict[str, Any]], tokenizer: Any, max_length: int
+) -> list[str]:
+    truncated: list[str] = []
+    for record in records:
+        prompt = tokenizer.apply_chat_template(
+            record["messages"][:-1],
+            tokenize=False,
+            add_generation_prompt=True,
+        )
+        prompt_ids = tokenizer(prompt, add_special_tokens=False)["input_ids"]
+        if len(prompt_ids) >= max_length:
+            truncated.append(record["id"])
+    return truncated
+
+
 def build_run_summary(args: argparse.Namespace, train_size: int, eval_size: int) -> dict[str, Any]:
     epoch_steps = max(1, math.ceil(train_size * args.epochs / args.gradient_accumulation_steps))
     estimated_steps = min(epoch_steps, args.max_steps) if args.max_steps > 0 else epoch_steps
@@ -159,6 +175,19 @@ def main() -> None:
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
     tokenizer.padding_side = "right"
+
+    for split_name, dataset_path in (
+        ("train", args.train_dataset),
+        ("validation", args.eval_dataset),
+    ):
+        records, _ = load_and_validate(dataset_path, require_metadata=True)
+        truncated_ids = find_truncated_completion_ids(records, tokenizer, args.max_length)
+        if truncated_ids:
+            preview = ", ".join(truncated_ids[:5])
+            raise SystemExit(
+                f"{split_name}: {len(truncated_ids)} hội thoại có prompt dài từ "
+                f"{args.max_length} token; phần completion sẽ bị cắt. Ví dụ: {preview}"
+            )
 
     if args.smoke_test:
         from transformers import Qwen3Config, Qwen3ForCausalLM

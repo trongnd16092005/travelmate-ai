@@ -56,6 +56,11 @@ bổ sung 240 hội thoại bốn lượt trên 20 điểm đến:
 - 20 ca ngôn ngữ đời thường, giữ riêng làm test.
 
 Split mới là 200 train, 20 validation và 20 test; không trùng prompt challenge.
-Dataset đã sẵn sàng nhưng chưa train adapter v4. Gemini hiện tại đã cải thiện từ
-prompt/backend; Qwen chỉ nhận được thay đổi phong cách sau khi fine-tune v4 và
-vượt lại toàn bộ bài đánh giá v3.
+Lần train v4 đầu tiên dùng system prompt đầy đủ khiến cả 200 mẫu train nhiều lượt
+và 20 mẫu validation mới vượt giới hạn 512 token. Train loss đạt 0,6230 nhưng
+validation loss là NaN, vì vậy candidate này bị loại và không được đưa vào app.
+
+System prompt trong dữ liệu sau đó được rút gọn mà vẫn giữ các quy tắc chính.
+Kết quả đo lại: không còn prompt nào chiếm hết 512 token; prompt dài nhất là 415
+token và hội thoại v4 đầy đủ dài nhất là 261 token. Pipeline train cũng được bổ
+sung kiểm tra để từ chối cấu hình làm mất toàn bộ completion trước khi tải model.

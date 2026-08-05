@@ -293,9 +293,10 @@ python -m training.train_qlora \
   --save-steps 20
 ```
 
-V4 hiện mới ở trạng thái dataset sẵn sàng; adapter mặc định vẫn là v3 cho đến
-khi candidate mới vượt structured test, challenge và đánh giá hội thoại nhiều
-lượt.
+Các mẫu v4 dùng system prompt huấn luyện rút gọn để toàn bộ hội thoại nhiều lượt
+nằm trong giới hạn 512 token. Pipeline sẽ dừng trước khi tải model nếu prompt đã
+chiếm hết giới hạn và làm mất completion. Adapter mặc định vẫn là v3 cho đến khi
+candidate v4 vượt structured test, challenge và đánh giá hội thoại nhiều lượt.
 
 Pipeline dùng NF4 4-bit, LoRA trên toàn bộ lớp tuyến tính và chỉ tính loss cho
 phần trả lời của assistant. Checkpoint, metric và cấu hình lần chạy được lưu
