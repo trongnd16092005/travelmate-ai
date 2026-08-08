@@ -16,6 +16,8 @@ class DestinationKnowledge:
     aliases: tuple[str, ...]
     places: tuple[PlaceKnowledge, ...]
     foods: tuple[str, ...]
+    region: str
+    themes: tuple[str, ...]
 
     @property
     def place_by_id(self) -> dict[str, PlaceKnowledge]:
@@ -145,7 +147,136 @@ RAW_DESTINATIONS: tuple[
         ("Phong Nha", "động Thiên Đường", "suối Nước Moọc"),
         ("cháo canh", "bánh bột lọc", "khoai deo"),
     ),
+    (
+        "Cát Bà",
+        ("Cat Ba", "đảo Cát Bà"),
+        ("vịnh Lan Hạ", "Vườn quốc gia Cát Bà", "bãi Cát Cò"),
+        ("tu hài", "sam biển", "bún tôm"),
+    ),
+    (
+        "Cô Tô",
+        ("Co To", "đảo Cô Tô"),
+        ("bãi Hồng Vàn", "bãi Vàn Chảy", "hải đăng Cô Tô"),
+        ("cù kỳ", "sá sùng", "hải sản"),
+    ),
+    (
+        "Quan Lạn",
+        ("Quan Lan", "đảo Quan Lạn", "Minh Châu"),
+        ("bãi Quan Lạn", "bãi Minh Châu", "đình Quan Lạn"),
+        ("sá sùng", "cầu gai", "hải sản"),
+    ),
+    (
+        "Móng Cái",
+        ("Mong Cai", "Trà Cổ", "Tra Co"),
+        ("bãi biển Trà Cổ", "mũi Sa Vĩ", "đình Trà Cổ"),
+        ("cù kỳ", "sam biển", "hải sản Trà Cổ"),
+    ),
+    (
+        "Đồ Sơn",
+        ("Do Son", "bãi biển Đồ Sơn"),
+        ("bãi biển Đồ Sơn", "đảo Hòn Dấu", "dinh Bảo Đại"),
+        ("bánh đa cua", "nem cua bể", "hải sản"),
+    ),
+    (
+        "Mộc Châu",
+        ("Moc Chau",),
+        ("đồi chè trái tim", "thác Dải Yếm", "rừng thông Bản Áng"),
+        ("bê chao", "cá suối", "sữa Mộc Châu"),
+    ),
+    (
+        "Mai Châu",
+        ("Mai Chau",),
+        ("bản Lác", "đèo Thung Khe", "hang Chiều"),
+        ("cơm lam", "gà đồi", "thịt lợn nướng"),
+    ),
+    (
+        "Tam Đảo",
+        ("Tam Dao",),
+        ("nhà thờ đá Tam Đảo", "thác Bạc", "Cầu Mây"),
+        ("ngọn su su", "gà đồi", "lợn mán"),
+    ),
+    (
+        "Sầm Sơn",
+        ("Sam Son", "Thanh Hóa", "Thanh Hoa"),
+        ("bãi biển Sầm Sơn", "hòn Trống Mái", "đền Độc Cước"),
+        ("nem chua", "chả tôm", "hải sản"),
+    ),
+    (
+        "Cửa Lò",
+        ("Cua Lo", "Nghệ An", "Nghe An"),
+        ("bãi biển Cửa Lò", "đảo Lan Châu", "đảo Hòn Ngư"),
+        ("cháo nghêu", "mực nháy", "lươn Nghệ An"),
+    ),
+    (
+        "Phú Yên",
+        ("Phu Yen", "Tuy Hòa", "Tuy Hoa"),
+        ("Gành Đá Đĩa", "Bãi Xép", "Mũi Điện"),
+        ("mắt cá ngừ đại dương", "sò huyết Ô Loan", "bánh hỏi lòng heo"),
+    ),
+    (
+        "Lý Sơn",
+        ("Ly Son", "đảo Lý Sơn"),
+        ("cổng Tò Vò", "núi Thới Lới", "đảo Bé"),
+        ("gỏi tỏi", "cua huỳnh đế", "ốc mặt trăng"),
+    ),
+    (
+        "Côn Đảo",
+        ("Con Dao", "Côn Sơn", "Con Son"),
+        ("bãi Đầm Trầu", "Vườn quốc gia Côn Đảo", "Bảo tàng Côn Đảo"),
+        ("ốc vú nàng", "mứt hạt bàng", "hải sản"),
+    ),
+    (
+        "Châu Đốc",
+        ("Chau Doc", "An Giang"),
+        ("miếu Bà Chúa Xứ", "rừng tràm Trà Sư", "làng Chăm Châu Phong"),
+        ("bún cá Châu Đốc", "mắm Châu Đốc", "tung lò mò"),
+    ),
+    (
+        "Bến Tre",
+        ("Ben Tre",),
+        ("cồn Phụng", "cồn Quy", "làng hoa Chợ Lách"),
+        ("cơm dừa", "bánh xèo ốc gạo", "kẹo dừa"),
+    ),
 )
+
+
+DESTINATION_METADATA: dict[str, tuple[str, tuple[str, ...]]] = {
+    "Đà Nẵng": ("Miền Trung", ("biển", "đô thị", "nghỉ dưỡng")),
+    "Huế": ("Miền Trung", ("văn hóa", "lịch sử", "ẩm thực")),
+    "Hội An": ("Miền Trung", ("văn hóa", "lịch sử", "biển")),
+    "Đà Lạt": ("Tây Nguyên", ("thiên nhiên", "nghỉ dưỡng", "núi")),
+    "Nha Trang": ("Miền Trung", ("biển", "nghỉ dưỡng", "đảo")),
+    "Phú Quốc": ("Miền Nam", ("biển", "nghỉ dưỡng", "đảo")),
+    "Hà Nội": ("Miền Bắc", ("văn hóa", "lịch sử", "đô thị", "ẩm thực")),
+    "TP. Hồ Chí Minh": ("Miền Nam", ("đô thị", "văn hóa", "ẩm thực")),
+    "Sa Pa": ("Miền Bắc", ("núi", "thiên nhiên", "văn hóa")),
+    "Ninh Bình": ("Miền Bắc", ("thiên nhiên", "văn hóa", "lịch sử")),
+    "Hạ Long": ("Miền Bắc", ("biển", "đảo", "thiên nhiên", "nghỉ dưỡng")),
+    "Quy Nhơn": ("Miền Trung", ("biển", "nghỉ dưỡng", "ẩm thực")),
+    "Vũng Tàu": ("Miền Nam", ("biển", "đô thị", "nghỉ dưỡng")),
+    "Cần Thơ": ("Miền Nam", ("sông nước", "văn hóa", "ẩm thực")),
+    "Mũi Né": ("Miền Trung", ("biển", "thiên nhiên", "nghỉ dưỡng")),
+    "Hà Giang": ("Miền Bắc", ("núi", "thiên nhiên", "văn hóa")),
+    "Cao Bằng": ("Miền Bắc", ("núi", "thiên nhiên", "văn hóa")),
+    "Buôn Ma Thuột": ("Tây Nguyên", ("văn hóa", "thiên nhiên", "ẩm thực")),
+    "Tây Ninh": ("Miền Nam", ("núi", "văn hóa", "tâm linh")),
+    "Quảng Bình": ("Miền Trung", ("thiên nhiên", "hang động", "biển")),
+    "Cát Bà": ("Miền Bắc", ("biển", "đảo", "thiên nhiên", "phiêu lưu")),
+    "Cô Tô": ("Miền Bắc", ("biển", "đảo", "nghỉ dưỡng")),
+    "Quan Lạn": ("Miền Bắc", ("biển", "đảo", "nghỉ dưỡng", "văn hóa")),
+    "Móng Cái": ("Miền Bắc", ("biển", "văn hóa", "ẩm thực")),
+    "Đồ Sơn": ("Miền Bắc", ("biển", "nghỉ dưỡng", "văn hóa")),
+    "Mộc Châu": ("Miền Bắc", ("núi", "thiên nhiên", "nghỉ dưỡng")),
+    "Mai Châu": ("Miền Bắc", ("núi", "thiên nhiên", "văn hóa")),
+    "Tam Đảo": ("Miền Bắc", ("núi", "nghỉ dưỡng", "thiên nhiên")),
+    "Sầm Sơn": ("Miền Trung", ("biển", "nghỉ dưỡng", "văn hóa")),
+    "Cửa Lò": ("Miền Trung", ("biển", "nghỉ dưỡng", "đảo")),
+    "Phú Yên": ("Miền Trung", ("biển", "thiên nhiên", "ẩm thực")),
+    "Lý Sơn": ("Miền Trung", ("biển", "đảo", "thiên nhiên", "văn hóa")),
+    "Côn Đảo": ("Miền Nam", ("biển", "đảo", "thiên nhiên", "lịch sử")),
+    "Châu Đốc": ("Miền Nam", ("sông nước", "văn hóa", "tâm linh")),
+    "Bến Tre": ("Miền Nam", ("sông nước", "văn hóa", "ẩm thực")),
+}
 
 
 def normalize_lookup_key(value: str) -> str:
@@ -168,9 +299,15 @@ DESTINATIONS: tuple[DestinationKnowledge, ...] = tuple(
             for place in places
         ),
         foods=foods,
+        region=DESTINATION_METADATA[name][0],
+        themes=DESTINATION_METADATA[name][1],
     )
     for name, aliases, places, foods in RAW_DESTINATIONS
 )
+
+# Frozen catalog used to reproduce the audited v1-v5 datasets. Runtime and v6 use
+# DESTINATIONS, while old builders deliberately retain their original 20-item scope.
+CORE_DESTINATIONS: tuple[DestinationKnowledge, ...] = DESTINATIONS[:20]
 
 DESTINATION_BY_KEY: dict[str, DestinationKnowledge] = {
     normalize_lookup_key(value): destination
@@ -181,3 +318,38 @@ DESTINATION_BY_KEY: dict[str, DestinationKnowledge] = {
 
 def resolve_destination(value: str) -> DestinationKnowledge | None:
     return DESTINATION_BY_KEY.get(normalize_lookup_key(value))
+
+
+def recommend_destinations(
+    region: str | None = None,
+    themes: tuple[str, ...] = (),
+    limit: int = 5,
+) -> tuple[DestinationKnowledge, ...]:
+    """Return catalog-grounded destinations ranked by region and requested themes."""
+    theme_aliases = {"nghi ngoi": "nghi duong"}
+    normalized_themes = {
+        theme_aliases.get(normalize_lookup_key(theme), normalize_lookup_key(theme))
+        for theme in themes
+    }
+    candidates = [
+        destination
+        for destination in DESTINATIONS
+        if region is None or destination.region == region
+    ]
+    ranked = sorted(
+        candidates,
+        key=lambda destination: -len(
+            normalized_themes
+            & {normalize_lookup_key(theme) for theme in destination.themes}
+        ),
+    )
+    if normalized_themes:
+        matching = [
+            destination
+            for destination in ranked
+            if normalized_themes
+            & {normalize_lookup_key(theme) for theme in destination.themes}
+        ]
+        if matching:
+            ranked = matching
+    return tuple(ranked[:limit])

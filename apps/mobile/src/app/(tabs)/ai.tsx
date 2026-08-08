@@ -55,6 +55,7 @@ function getErrorMessage(error: unknown): string {
 
 export default function AiScreen() {
   const listRef = useRef<FlatList<ChatMessage>>(null);
+  const chatGenerationRef = useRef(0);
   const [messages, setMessages] = useState(initialMessages);
   const [input, setInput] = useState('');
   const [destination, setDestination] = useState('');
@@ -62,14 +63,31 @@ export default function AiScreen() {
   const [numPeople, setNumPeople] = useState('');
   const [suggestions, setSuggestions] = useState(initialSuggestions);
   const [provider, setProvider] = useState<ChatResponse['provider'] | null>(null);
+  const [modelVersion, setModelVersion] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const mutation = useMutation({
-    mutationFn: sendChatMessage,
-    onSuccess: (response) => {
+    mutationFn: ({ request }: { request: ChatRequest; generation: number }) =>
+      sendChatMessage(request),
+    onSuccess: (response, variables) => {
+      if (variables.generation !== chatGenerationRef.current) return;
+      if (response.resetContext) {
+        chatGenerationRef.current += 1;
+        setMessages([createMessage('assistant', response.reply)]);
+        setInput('');
+        setDestination('');
+        setBudget('');
+        setNumPeople('');
+        setSuggestions(response.suggestedQuestions);
+        setProvider(response.provider);
+        setModelVersion(response.modelVersion ?? null);
+        setErrorMessage(null);
+        return;
+      }
       setMessages((current) => [...current, createMessage('assistant', response.reply)]);
       setSuggestions(response.suggestedQuestions);
       setProvider(response.provider);
+      setModelVersion(response.modelVersion ?? null);
       setErrorMessage(null);
     },
     onError: (error) => {
@@ -79,10 +97,10 @@ export default function AiScreen() {
 
   const providerLabel = useMemo(() => {
     if (provider === 'gemini') return 'Gemini API';
-    if (provider === 'local') return 'Qwen local';
+    if (provider === 'local') return `Qwen local${modelVersion ? ` ${modelVersion}` : ''}`;
     if (provider === 'mock') return 'Mock API';
     return 'Chưa kết nối';
-  }, [provider]);
+  }, [modelVersion, provider]);
 
   function sendMessage(value = input) {
     const content = value.trim();
@@ -94,7 +112,7 @@ export default function AiScreen() {
     const hasTripContext = Boolean(destinationValue || budgetValue || numPeopleValue);
     const request: ChatRequest = {
       message: content,
-      history: messages.slice(-10).map(({ role, content: historyContent }) => ({
+      history: messages.slice(-20).map(({ role, content: historyContent }) => ({
         role,
         content: historyContent,
       })),
@@ -110,16 +128,19 @@ export default function AiScreen() {
     setMessages((current) => [...current, createMessage('user', content)]);
     setInput('');
     setErrorMessage(null);
-    mutation.mutate(request);
+    mutation.mutate({ request, generation: chatGenerationRef.current });
   }
 
   function resetChat() {
+    chatGenerationRef.current += 1;
     setMessages(initialMessages);
+    setInput('');
     setDestination('');
     setBudget('');
     setNumPeople('');
     setSuggestions(initialSuggestions);
     setProvider(null);
+    setModelVersion(null);
     setErrorMessage(null);
     mutation.reset();
   }

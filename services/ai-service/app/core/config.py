@@ -1,3 +1,4 @@
+import re
 from functools import lru_cache
 from typing import Literal
 
@@ -15,7 +16,7 @@ class Settings(BaseSettings):
     )
     llm_provider: Literal["mock", "gemini", "local"] = "mock"
     local_model_id: str = "Qwen/Qwen3-4B"
-    local_adapter_path: str = "artifacts/travelmate-qwen3-4b-lora-v3-grounded"
+    local_adapter_path: str = "artifacts/travelmate-qwen3-4b-lora-v10-reasoning-guarded"
     local_model_device: str = "auto"
     local_model_load_in_4bit: bool = True
     local_model_max_new_tokens: int = 512
@@ -34,6 +35,11 @@ class Settings(BaseSettings):
     @property
     def cors_origin_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+
+    @property
+    def local_model_version(self) -> str | None:
+        match = re.search(r"(?:^|[-_/])(v\d+)(?:[-_/]|$)", self.local_adapter_path.casefold())
+        return match.group(1) if match else None
 
 
 @lru_cache

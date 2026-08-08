@@ -75,8 +75,12 @@ def evaluate_structured_records(
     records: list[dict[str, Any]],
     predictions: dict[str, str],
 ) -> dict[str, Any]:
+    structured_categories = {
+        "structured_itinerary_v3",
+        "expanded_structured_itinerary_v6",
+    }
     structured_records = [
-        record for record in records if record.get("category") == "structured_itinerary_v3"
+        record for record in records if record.get("category") in structured_categories
     ]
     cases: list[dict[str, Any]] = []
     passed = 0

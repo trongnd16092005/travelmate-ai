@@ -1,5 +1,8 @@
 # Huấn luyện TravelMate Chatbot
 
+Xem [lịch sử cập nhật v1-v10](VERSION_HISTORY.md) để biết mục tiêu, dữ liệu,
+kết quả đánh giá và quyết định phát hành của từng phiên bản.
+
 Pipeline fine-tune `Qwen/Qwen3-4B` bằng QLoRA được chia thành bốn giai đoạn,
 tương ứng với bốn notebook Google Colab:
 
@@ -310,6 +313,188 @@ trường và mount đúng thư mục Drive, tiếp tục lần chạy bằng c�
 
 Callback lưu định kỳ vẫn dùng `--save-steps` của lần chạy mới nếu checkpoint cũ
 được tạo với chu kỳ lưu khác.
+
+### Hội thoại có state v5
+
+V5 bổ sung 400 hội thoại để sửa các lỗi phát hiện khi demo v4: câu trả lời ngắn
+`rồi/chưa/có/không`, lặp câu hỏi đã trả lời, đổi intent giữa chừng, xung đột
+điểm đến-khu vực, hội thoại dài và suy giảm hành vi safety/realtime. Backend
+đồng thời lưu nhịp chuyến đi, sở thích và trạng thái chi phí di chuyển; model
+không được dùng thay cho state đã xác thực.
+
+```bash
+python -m training.build_conversation_v5 \
+  --processed-v4-dir training/data/processed/natural_v4 \
+  --challenge training/data/challenge_v1.jsonl \
+  --reinforcement-output training/data/reinforcement_v5.jsonl \
+  --processed-output-dir training/data/processed/stateful_v5 \
+  --approved-at YYYY-MM-DD
+```
+
+Phân bố mới là 300 train, 50 validation và 50 test; khi ghép với v4 thành
+2.320/230/230. Candidate phải được train lại từ base model trên toàn bộ tập kết
+hợp để không quên schema và guardrail:
+
+```bash
+python -m training.train_qlora \
+  --train-dataset training/data/processed/stateful_v5/train.jsonl \
+  --eval-dataset training/data/processed/stateful_v5/validation.jsonl \
+  --output-dir artifacts/travelmate-qwen3-4b-lora-v5-stateful \
+  --epochs 1 \
+  --max-length 512 \
+  --learning-rate 5e-5 \
+  --gradient-accumulation-steps 16 \
+  --lora-r 8 \
+  --lora-alpha 16 \
+  --save-steps 20
+```
+
+Không đổi adapter mặc định trước khi v5 vượt regression hội thoại dài, challenge
+v1 và structured test.
+
+### Catalog điểm đến mở rộng v6
+
+V6 tăng catalog runtime từ 20 lên 35 điểm đến, thêm metadata `region` và
+`themes`, đồng thời giữ `CORE_DESTINATIONS` cố định để các dataset v1-v5 có thể
+tái lập đúng số lượng đã kiểm toán. Bộ bổ sung có 560 mẫu: 420 itinerary JSON
+grounded cho 15 điểm mới và 140 hội thoại gợi ý theo cặp vùng-loại trải nghiệm.
+
+```bash
+python -m training.build_destination_v6 \
+  --processed-v5-dir training/data/processed/stateful_v5 \
+  --challenge training/data/challenge_v1.jsonl \
+  --reinforcement-output training/data/reinforcement_v6.jsonl \
+  --processed-output-dir training/data/processed/expanded_v6 \
+  --approved-at YYYY-MM-DD
+
+python -m training.train_qlora \
+  --train-dataset training/data/processed/expanded_v6/train.jsonl \
+  --eval-dataset training/data/processed/expanded_v6/validation.jsonl \
+  --output-dir artifacts/travelmate-qwen3-4b-lora-v6-expanded \
+  --epochs 1 --max-length 512 --learning-rate 5e-5 \
+  --gradient-accumulation-steps 16 --lora-r 8 --lora-alpha 16 \
+  --save-steps 20
+```
+
+Builder cũng ghi `expanded_structured_validation.jsonl` và
+`expanded_structured_test.jsonl` để đánh giá riêng các điểm vừa bổ sung.
+
+### Thực thi intent v7
+
+V7 sửa lỗi chatbot đã có đủ ngữ cảnh nhưng vẫn hỏi người dùng chọn giữa lập
+lịch, phân bổ ngân sách và checklist. Backend trả kết quả trực tiếp cho từng
+intent hoặc cả ba intent trong một câu; model được bổ sung 420 hội thoại trên
+đủ 35 điểm đến.
+
+```bash
+python -m training.build_intent_execution_v7 \
+  --processed-v6-dir training/data/processed/expanded_v6 \
+  --challenge training/data/challenge_v1.jsonl \
+  --reinforcement-output training/data/reinforcement_v7.jsonl \
+  --processed-output-dir training/data/processed/intent_v7 \
+  --approved-at YYYY-MM-DD
+
+python -m training.train_qlora \
+  --train-dataset training/data/processed/intent_v7/train.jsonl \
+  --eval-dataset training/data/processed/intent_v7/validation.jsonl \
+  --output-dir artifacts/travelmate-qwen3-4b-lora-v7-intent-execution \
+  --epochs 1 --max-length 512 --learning-rate 5e-5 \
+  --gradient-accumulation-steps 16 --lora-r 8 --lora-alpha 16 \
+  --save-steps 20
+```
+
+`intent_test.jsonl` là tập held-out cân bằng dùng để kiểm model có trả nội dung
+thực thi hay chỉ lặp lại menu lựa chọn.
+
+### Chuyển trạng thái chuyến đi v8
+
+V8 không học riêng một câu reset. Bộ dữ liệu mô tả quy tắc tổng quát: đổi điểm
+đến hoặc vùng tạo chuyến mới và bỏ các slot phụ thuộc; sửa ngân sách, thời
+lượng hoặc số người chỉ cập nhật slot được nêu; nhắc lại cùng điểm đến hay đổi
+nhịp chuyến phải giữ các slot còn lại. 560 hội thoại mới phủ đủ 35 điểm đến.
+
+```bash
+python -m training.build_state_transition_v8 \
+  --processed-v7-dir training/data/processed/intent_v7 \
+  --challenge training/data/challenge_v1.jsonl \
+  --reinforcement-output training/data/reinforcement_v8.jsonl \
+  --processed-output-dir training/data/processed/state_v8 \
+  --approved-at YYYY-MM-DD
+
+python -m training.train_qlora \
+  --train-dataset training/data/processed/state_v8/train.jsonl \
+  --eval-dataset training/data/processed/state_v8/validation.jsonl \
+  --output-dir artifacts/travelmate-qwen3-4b-lora-v8-state-transition \
+  --epochs 1 --max-length 512 --learning-rate 5e-5 \
+  --gradient-accumulation-steps 16 --lora-r 8 --lora-alpha 16 \
+  --save-steps 20
+```
+
+`transition_test.jsonl` gồm 20 ca giữ riêng, cân bằng trên năm loại chuyển
+trạng thái. Sinh prediction rồi chấm bằng
+`python -m training.evaluate_state_transition`; evaluator kiểm dữ liệu nào bị
+xóa, được giữ hay được cập nhật thay vì so khớp nguyên văn câu trả lời.
+
+### UX tự nhiên v9
+
+V9 tiếp tục fine-tune từ adapter v8 với learning rate thấp. Mục tiêu là phản
+hồi nhất quán khi người dùng cung cấp nhiều slot trong một lượt, echo rõ state
+được giữ khi sửa chuyến, không nhắc slot cũ sau đổi điểm đến và hỏi làm rõ tự
+nhiên. 455 hội thoại mới được trộn với 600 mẫu replay v8; prompt cuối của
+challenge và `transition_test` không được đưa vào train.
+
+```bash
+python -m training.build_natural_ux_v9 \
+  --processed-v8-dir training/data/processed/state_v8 \
+  --challenge training/data/challenge_v1.jsonl \
+  --reinforcement-output training/data/reinforcement_v9.jsonl \
+  --processed-output-dir training/data/processed/ux_v9 \
+  --approved-at YYYY-MM-DD
+
+python -m training.train_qlora \
+  --train-dataset training/data/processed/ux_v9/train.jsonl \
+  --eval-dataset training/data/processed/ux_v9/validation.jsonl \
+  --init-adapter-path artifacts/travelmate-qwen3-4b-lora-v8-state-transition \
+  --output-dir artifacts/travelmate-qwen3-4b-lora-v9-natural-ux \
+  --epochs 1 --max-length 512 --learning-rate 1e-5 \
+  --gradient-accumulation-steps 16 --lora-r 8 --lora-alpha 16 \
+  --save-steps 10
+```
+
+`ux_test.jsonl` gồm 20 ca mới cân bằng trên năm nhóm UX. Chấm bằng
+`python -m training.evaluate_natural_ux`, đồng thời chạy lại nguyên trạng
+`transition_test.jsonl` của v8 để đo regression.
+
+### Suy luận theo ràng buộc v10
+
+V10 tiếp tục từ adapter v9 và tập trung vào suy luận trong phạm vi du lịch:
+ưu tiên nhiều ràng buộc, phát hiện kế hoạch bất khả thi, so sánh phương án theo
+tiêu chí người dùng, xếp lịch theo ngày đến/rời đi và lập phương án có điều kiện
+khi dữ liệu realtime chưa chắc chắn. Dataset chỉ lưu kết luận và căn cứ ngắn,
+không yêu cầu hay lưu chuỗi suy nghĩ nội bộ.
+
+```bash
+python -m training.build_reasoning_v10 \
+  --processed-v9-dir training/data/processed/ux_v9 \
+  --challenge training/data/challenge_v1.jsonl \
+  --reinforcement-output training/data/reinforcement_v10.jsonl \
+  --processed-output-dir training/data/processed/reasoning_v10 \
+  --approved-at YYYY-MM-DD
+
+python -m training.train_qlora \
+  --train-dataset training/data/processed/reasoning_v10/train.jsonl \
+  --eval-dataset training/data/processed/reasoning_v10/validation.jsonl \
+  --init-adapter-path artifacts/travelmate-qwen3-4b-lora-v9-natural-ux \
+  --output-dir artifacts/travelmate-qwen3-4b-lora-v10-reasoning \
+  --epochs 1 --max-length 512 --learning-rate 8e-6 \
+  --gradient-accumulation-steps 16 --lora-r 8 --lora-alpha 16 \
+  --save-steps 10
+```
+
+`reasoning_test.jsonl` chứa 20 ca held-out cân bằng trên năm nhóm. Sinh phản
+hồi bằng `training.generate_predictions`, chấm bằng
+`python -m training.evaluate_reasoning`, rồi chạy lại `ux_test`,
+`transition_test` và `intent_test` để phát hiện quên năng lực cũ.
 
 ## 3. Đánh giá
 

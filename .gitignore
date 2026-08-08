@@ -37,5 +37,9 @@ tmp/
 artifacts/
 checkpoints/
 *.safetensors
+!services/ai-service/artifacts/
+services/ai-service/artifacts/*
+!services/ai-service/artifacts/travelmate-qwen3-4b-lora-v10-reasoning-guarded/
+!services/ai-service/artifacts/travelmate-qwen3-4b-lora-v10-reasoning-guarded/**
 services/ai-service/training/data/processed/
 services/ai-service/training/outputs/

@@ -13,6 +13,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--eval-dataset", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--model-id", default="Qwen/Qwen3-4B")
+    parser.add_argument(
+        "--init-adapter-path",
+        type=Path,
+        help="Tiếp tục fine-tune từ LoRA adapter đã có thay vì khởi tạo adapter mới.",
+    )
     parser.add_argument("--epochs", type=float, default=3.0)
     parser.add_argument("--max-length", type=int, default=1024)
     parser.add_argument("--learning-rate", type=float, default=2e-4)
@@ -111,6 +116,9 @@ def build_run_summary(args: argparse.Namespace, train_size: int, eval_size: int)
     estimated_steps = min(epoch_steps, args.max_steps) if args.max_steps > 0 else epoch_steps
     return {
         "modelId": args.model_id,
+        "initAdapterPath": (
+            str(args.init_adapter_path) if getattr(args, "init_adapter_path", None) else None
+        ),
         "trainDataset": str(args.train_dataset),
         "evalDataset": str(args.eval_dataset),
         "trainRecords": train_size,
@@ -143,6 +151,12 @@ def main() -> None:
         raise SystemExit("--lora-dropout phải nằm trong khoảng [0, 1)")
     if args.max_steps == 0 or args.max_steps < -1:
         raise SystemExit("--max-steps phải là -1 hoặc số nguyên dương")
+    if args.init_adapter_path and args.smoke_test:
+        raise SystemExit("--init-adapter-path không dùng cùng --smoke-test")
+    if args.init_adapter_path and args.resume_from_checkpoint:
+        raise SystemExit("Chỉ chọn một trong --init-adapter-path hoặc --resume-from-checkpoint")
+    if args.init_adapter_path and not (args.init_adapter_path / "adapter_config.json").exists():
+        raise SystemExit(f"Không tìm thấy LoRA adapter tại {args.init_adapter_path}")
     train_size, eval_size = validate_training_files(
         args.train_dataset,
         args.eval_dataset,
@@ -156,7 +170,7 @@ def main() -> None:
 
     import torch
     from datasets import load_dataset
-    from peft import LoraConfig
+    from peft import LoraConfig, PeftModel, prepare_model_for_kbit_training
     from transformers import (
         AutoModelForCausalLM,
         AutoTokenizer,
@@ -219,6 +233,16 @@ def main() -> None:
             torch_dtype=compute_dtype,
             quantization_config=quantization,
         )
+        if args.init_adapter_path:
+            model = prepare_model_for_kbit_training(
+                model,
+                use_gradient_checkpointing=True,
+            )
+            model = PeftModel.from_pretrained(
+                model,
+                args.init_adapter_path,
+                is_trainable=True,
+            )
     model.config.use_cache = False
 
     raw_dataset = load_dataset(
@@ -283,7 +307,7 @@ def main() -> None:
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
         processing_class=tokenizer,
-        peft_config=lora_config,
+        peft_config=None if args.init_adapter_path else lora_config,
         callbacks=[FrequentCheckpointCallback()],
     )
 

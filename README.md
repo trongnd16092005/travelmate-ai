@@ -69,6 +69,11 @@ python -m pip install -e ".[dev]"
 uvicorn app.main:app --reload
 ```
 
+Adapter production đã fine-tune được lưu bằng Git LFS trong
+`services/ai-service/artifacts/travelmate-qwen3-4b-lora-v10-reasoning-guarded`.
+Thành viên chỉ cần chạy inference, không cần train lại; xem hướng dẫn đầy đủ tại
+[`services/ai-service/README.md`](services/ai-service/README.md).
+
 Không commit file `.env` hoặc bất kỳ API key nào lên Git.
 
 ## Quy trình Git bắt buộc

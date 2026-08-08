@@ -28,7 +28,7 @@ class TripContext(ApiModel):
 
 class ChatRequest(ApiModel):
     message: str = Field(min_length=1, max_length=1000)
-    history: list[ChatHistoryMessage] = Field(default_factory=list, max_length=10)
+    history: list[ChatHistoryMessage] = Field(default_factory=list, max_length=20)
     trip_context: TripContext | None = None
 
 
@@ -37,3 +37,5 @@ class ChatResponse(ApiModel):
     is_out_of_scope: bool
     suggested_questions: list[str] = Field(default_factory=list, max_length=3)
     provider: Literal["mock", "gemini", "local"]
+    model_version: str | None = None
+    reset_context: bool = False

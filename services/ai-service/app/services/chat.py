@@ -8,6 +8,7 @@ from app.knowledge.destinations import (
     DESTINATIONS,
     DestinationKnowledge,
     normalize_lookup_key,
+    recommend_destinations,
     resolve_destination,
 )
 from app.prompts.chat import CHAT_SYSTEM_PROMPT
@@ -74,11 +75,27 @@ VULNERABLE_TRAVELER_TERMS = (
 
 
 class ChatService:
-    def __init__(self, model: ChatModel, provider: str) -> None:
+    def __init__(self, model: ChatModel, provider: str, model_version: str | None = None) -> None:
         self.model = model
         self.provider = provider
+        self.model_version = model_version
 
     def chat(self, request: ChatRequest) -> ChatResponse:
+        if self._is_reset_request(request.message):
+            return ChatResponse(
+                reply=(
+                    "Mình đã xóa ngữ cảnh chuyến cũ. Bạn muốn bắt đầu chuyến mới ở đâu?"
+                ),
+                is_out_of_scope=False,
+                suggested_questions=[
+                    "Gợi ý điểm đến miền Bắc",
+                    "Gợi ý điểm đến miền Trung",
+                    "Gợi ý điểm đến miền Nam",
+                ],
+                provider=self.provider,
+                model_version=self.model_version,
+                reset_context=True,
+            )
         memory = build_conversation_memory(request)
         guardrail = self._guardrail_reply(request.message)
         if guardrail is not None:
@@ -88,6 +105,7 @@ class ChatService:
                 isOutOfScope=is_out_of_scope,
                 suggestedQuestions=self._suggest_questions(memory),
                 provider=self.provider,
+                modelVersion=self.model_version,
             )
         guided_reply = self._guided_reply(request, memory)
         if guided_reply is not None:
@@ -96,6 +114,7 @@ class ChatService:
                 is_out_of_scope=False,
                 suggested_questions=self._suggest_questions(memory),
                 provider=self.provider,
+                model_version=self.model_version,
             )
         messages = self.build_messages(request)
         raw_reply = self.model.generate(messages).strip()
@@ -109,6 +128,42 @@ class ChatService:
             is_out_of_scope=is_out_of_scope,
             suggested_questions=self._suggest_questions(memory),
             provider=self.provider,
+            model_version=self.model_version,
+        )
+
+    @staticmethod
+    def _is_reset_request(message: str) -> bool:
+        normalized = normalize_lookup_key(message)
+        exact_requests = {
+            "dat lai",
+            "reset",
+            "bat dau lai",
+            "bat dau chuyen moi",
+            "tao chuyen moi",
+            "xoa thong tin chuyen cu",
+            "xoa du lieu chuyen cu",
+            "lam lai tu dau",
+            "chuyen khac",
+            "doi chuyen",
+            "di noi khac",
+            "toi muon mot chuyen khac",
+            "toi muon di noi khac",
+        }
+        return normalized in exact_requests or any(
+            phrase in normalized
+            for phrase in (
+                "reset du lieu chuyen di",
+                "dat lai thong tin chuyen di",
+                "xoa ngu canh chuyen cu",
+                "bo het thong tin chuyen cu",
+                "bat dau ke hoach moi",
+                "bat dau mot chuyen khac",
+                "doi sang chuyen moi",
+                "lam lai tu dau",
+                "chuyen khac",
+                "doi chuyen",
+                "di noi khac",
+            )
         )
 
     @staticmethod
@@ -233,6 +288,22 @@ class ChatService:
     @staticmethod
     def _progress_reply(memory: ConversationMemory) -> str:
         if not memory.destination:
+            if memory.region and memory.interests:
+                recommendations = recommend_destinations(
+                    region=memory.region,
+                    themes=memory.interests,
+                    limit=5,
+                )
+                if recommendations:
+                    preference = ", ".join(memory.interests)
+                    options = "; ".join(
+                        f"{destination.name} ({', '.join(place.name for place in destination.places[:2])})"
+                        for destination in recommendations
+                    )
+                    return (
+                        f"Với ưu tiên {preference} ở {memory.region}, mình gợi ý: {options}. "
+                        "Bạn chọn một nơi, mình sẽ lên lịch và phân bổ ngân sách theo số ngày."
+                    )
             if memory.region == "Miền Trung":
                 group = f" cho nhóm {memory.num_people} người" if memory.num_people else ""
                 return (
@@ -268,6 +339,14 @@ class ChatService:
                 f"{memory.num_people} người. Tổng ngân sách dự kiến là bao nhiêu?"
             )
         budget = f"{memory.budget_vnd:,}".replace(",", ".")
+        if memory.transport_included is not None:
+            transport = "đã bao gồm" if memory.transport_included else "chưa bao gồm"
+            return (
+                f"Mình đã ghi nhận chuyến {memory.destination} {memory.duration_days} ngày cho "
+                f"{memory.num_people} người với ngân sách {budget} VND, {transport} chi phí "
+                "di chuyển đến điểm đến. Bạn muốn mình hỗ trợ lập lịch trình, phân bổ ngân sách "
+                "hay chuẩn bị checklist?"
+            )
         return (
             f"Mình đã ghi nhận chuyến {memory.destination} {memory.duration_days} ngày cho "
             f"{memory.num_people} người với ngân sách {budget} VND. "
@@ -281,9 +360,53 @@ class ChatService:
         memory: ConversationMemory,
     ) -> str | None:
         normalized = normalize_lookup_key(request.message)
-        recommendation_intent = (
-            "goi y" in normalized and "diem den" in normalized
-        ) or "nen di dau" in normalized
+        reasoning_reply = cls._reasoning_reply(normalized, memory)
+        if reasoning_reply is not None:
+            return reasoning_reply
+        previous_assistant = next(
+            (
+                normalize_lookup_key(message.content)
+                for message in reversed(request.history)
+                if message.role == "assistant"
+            ),
+            "",
+        )
+        preparation_intent = any(
+            term in normalized
+            for term in ("can chuan bi", "chuan bi gi", "mang gi", "checklist", "can gi cho chuyen")
+        )
+        itinerary_intent = any(
+            term in normalized
+            for term in ("lap lich", "len lich", "xep lich", "lich trinh", "lich di")
+        ) or (
+            "theo diem den" in normalized
+            and any(
+                term in previous_assistant
+                for term in ("lap lich", "lich trinh", "goi y diem den cu the")
+            )
+        )
+        budget_intent = any(
+            term in normalized
+            for term in (
+                "phan bo ngan sach",
+                "chia ngan sach",
+                "ngan sach nen chia",
+                "du toan chi phi",
+            )
+        ) or (
+            "theo ngay" in normalized
+            and any(term in previous_assistant for term in ("phan bo ngan sach", "chia ngan sach"))
+        )
+        intent_replies: list[str] = []
+        if itinerary_intent:
+            intent_replies.append(cls._itinerary_reply(memory))
+        if budget_intent:
+            intent_replies.append(cls._budget_reply(memory))
+        if preparation_intent:
+            intent_replies.append(cls._preparation_reply(memory))
+        if intent_replies:
+            return "\n\n".join(intent_replies)
+        recommendation_intent = "goi y" in normalized or "nen di dau" in normalized
         planning_intent = any(
             term in normalized
             for term in (
@@ -291,10 +414,21 @@ class ChatService:
                 "can chuyen",
                 "du lich",
                 "muon di",
+                "di choi",
                 "can di",
                 "di tai",
             )
         )
+        if planning_intent and not memory.destination and not memory.region:
+            if memory.duration_days:
+                return (
+                    f"Mình đã ghi nhận chuyến {memory.duration_days} ngày. Bạn muốn đi điểm đến "
+                    "hoặc khu vực nào?"
+                )
+            return (
+                "Bạn muốn đi điểm đến hoặc khu vực nào, trong khoảng bao nhiêu ngày? "
+                "Nếu đã có ngân sách dự kiến, bạn có thể cho mình biết luôn."
+            )
         if memory.region and not memory.destination:
             if recommendation_intent:
                 return cls._progress_reply(memory)
@@ -313,23 +447,247 @@ class ChatService:
                 supplied.duration_days,
                 supplied.num_people,
                 supplied.budget_vnd,
+                supplied.region,
+                supplied.pace,
             )
-        )
+        ) or bool(supplied.interests)
         explicit_intent = any(
             term in normalized
             for term in (
                 "goi y",
                 "lich trinh",
                 "lap lich",
-                "ngan sach",
                 "nen ",
                 "di dau",
                 "an gi",
+                "chuan bi",
+                "mang gi",
+                "checklist",
             )
         )
-        if supplied_slot and len(normalized.split()) <= 10 and not explicit_intent:
+        if memory.last_answered_slot == "transport_included":
+            return cls._progress_reply(memory)
+        correction_intent = any(
+            term in normalized for term in ("doi ", "cap nhat", "sua ", "thanh ")
+        )
+        if correction_intent and supplied_slot and not (
+            itinerary_intent or budget_intent or preparation_intent
+        ):
+            return cls._progress_reply(memory)
+        if supplied.region and memory.destination and len(normalized.split()) <= 5:
+            return (
+                f"{memory.destination} thuộc {supplied.region}. Mình vẫn giữ {memory.destination} "
+                "là điểm đến hiện tại; nếu bạn muốn mở rộng sang nơi khác trong vùng, hãy nói rõ "
+                "để mình điều chỉnh."
+            )
+        if supplied_slot and len(normalized.split()) <= 24 and not explicit_intent:
             return cls._progress_reply(memory)
         return None
+
+    @classmethod
+    def _reasoning_reply(
+        cls,
+        normalized: str,
+        memory: ConversationMemory,
+    ) -> str | None:
+        destination = cls._target_destination(memory)
+        realtime_terms = (
+            "mo cua",
+            "hoat dong binh thuong",
+            "khong mua",
+            "thoi tiet",
+            "du bao",
+        )
+        uncertainty_intent = any(term in normalized for term in realtime_terms) and any(
+            term in normalized for term in ("chac", "dung khong", "co chac")
+        )
+        if uncertainty_intent:
+            target = destination.name if destination else "điểm đến này"
+            fallback = (
+                destination.places[0].name
+                if destination and destination.places
+                else "một hoạt động trong nhà hoặc dễ đổi lịch"
+            )
+            return (
+                f"Mình chưa thể khẳng định thời tiết hoặc tình trạng hoạt động tại {target} "
+                "khi chưa có nguồn hiện tại. Hãy kiểm tra dự báo chính thức và thông báo của "
+                "địa điểm trước khi chốt; nếu điều kiện phù hợp thì giữ kế hoạch, nếu không thì "
+                f"chuyển sang {fallback}."
+            )
+
+        sequence_intent = any(
+            term in normalized
+            for term in ("den muon", "toi ngay 1", "toi ngay dau", "toi moi den")
+        ) and any(
+            term in normalized
+            for term in ("ve som", "roi di som", "sang ngay 3", "ngay cuoi ve")
+        )
+        if sequence_intent and destination:
+            first = destination.places[0].name
+            second = destination.places[1].name
+            third = destination.places[2].name
+            return (
+                "Ngày 1 đến muộn: chỉ nhận phòng, ăn gần nơi ở và nghỉ. "
+                f"Ngày 2 là ngày tham quan chính: ưu tiên {first}, sau đó thêm {second} nếu "
+                "thời gian thực tế cho phép. Ngày 3 rời đi sớm nên không xếp "
+                f"{third}; cách này tránh nhồi hoạt động vào hai ngày di chuyển."
+            )
+
+        aspirational_terms = (
+            "cao cap",
+            "an ngon",
+            "dac san moi bua",
+            "tham quan het",
+            "di du ba diem",
+            "moi diem noi bat",
+        )
+        infeasible_intent = (
+            memory.budget_vnd is not None
+            and memory.num_people is not None
+            and memory.duration_days is not None
+            and sum(term in normalized for term in aspirational_terms) >= 2
+        )
+        if infeasible_intent:
+            daily = memory.budget_vnd // memory.num_people // memory.duration_days
+            daily_text = f"{daily:,}".replace(",", ".")
+            total_text = f"{memory.budget_vnd:,}".replace(",", ".")
+            place_priority = (
+                ""
+                if destination is None
+                else (
+                    f", chỉ ưu tiên {destination.places[0].name} và "
+                    f"{destination.places[1].name}"
+                )
+            )
+            return (
+                f"Ngân sách {total_text} VND cho {memory.num_people} người trong "
+                f"{memory.duration_days} ngày tương đương khoảng {daily_text} VND/người/ngày "
+                "cho toàn bộ chuyến, nên yêu cầu cao cấp, ăn ngon và tham quan hết khó khả thi "
+                "đồng thời. Bạn có thể giữ ngân sách nhưng giảm số ngày, chọn lưu trú tiết kiệm"
+                f"{place_priority}; hoặc giữ thời lượng và tăng ngân sách/hạ tiêu chuẩn lưu trú. "
+                "Mình không tự gán giá phòng khi chưa kiểm tra nguồn hiện tại."
+            )
+
+        vulnerable_terms = ("tre nho", "nguoi lon tuoi", "nguoi cao tuoi", "em be")
+        pacing_terms = ("khong qua met", "lich nhe", "thu tha", "chua thoi gian nghi")
+        constraint_intent = any(term in normalized for term in vulnerable_terms) and any(
+            term in normalized for term in pacing_terms
+        )
+        if constraint_intent and destination:
+            duration = memory.duration_days or 3
+            return (
+                "Mình ưu tiên sức khỏe trước số lượng điểm: mỗi ngày một điểm chính, xen kẽ "
+                f"ngày nhẹ và ngày tham quan trong {duration} ngày ở {destination.name}. Chọn "
+                f"{destination.places[0].name} và {destination.places[1].name} làm hai điểm "
+                f"chính; {destination.places[2].name} chỉ thêm nếu trẻ nhỏ và người lớn tuổi "
+                "vẫn thoải mái. Cách này giữ được thời gian nghỉ mà không làm chuyến đi quá đơn điệu."
+            )
+
+        comparison_intent = any(
+            term in normalized for term in ("so sanh", "phan van", "giua ", "chon phuong an")
+        )
+        mentioned = [
+            candidate
+            for candidate in DESTINATIONS
+            if cls._mentions_destination(normalized, candidate)
+        ]
+        if comparison_intent and len(mentioned) >= 2:
+            requested_theme = next(
+                (
+                    theme
+                    for candidate in mentioned
+                    for theme in candidate.themes
+                    if normalize_lookup_key(theme) in normalized
+                ),
+                None,
+            )
+            chosen = next(
+                (
+                    candidate
+                    for candidate in mentioned
+                    if requested_theme and requested_theme in candidate.themes
+                ),
+                mentioned[0],
+            )
+            alternative = next(candidate for candidate in mentioned if candidate.id != chosen.id)
+            criterion = requested_theme or chosen.themes[0]
+            return (
+                f"Theo tiêu chí {criterion}, mình chọn {chosen.name} vì danh mục đã xác thực có "
+                f"{chosen.places[0].name} và {chosen.places[1].name}, phù hợp hơn với ưu tiên này. "
+                f"{alternative.name} vẫn đáng cân nhắc nếu bạn chuyển trọng tâm sang "
+                f"{alternative.themes[0]}."
+            )
+        return None
+
+    @staticmethod
+    def _preparation_reply(memory: ConversationMemory) -> str:
+        destination = memory.destination or "điểm đến"
+        duration = f" trong {memory.duration_days} ngày" if memory.duration_days else ""
+        return (
+            f"Checklist cho {destination}{duration}; trước hết hãy chuẩn bị giấy tờ tùy thân:\n"
+            "• Giấy tờ: CCCD/hộ chiếu, vé và xác nhận nơi ở.\n"
+            "• Tài chính: tiền mặt dự phòng, thẻ và hạn mức chi tiêu.\n"
+            "• Cá nhân: thuốc đang dùng, đồ vệ sinh, sạc và pin dự phòng.\n"
+            "• Trang phục: quần áo theo thời tiết, giày dễ đi và đồ chống nắng/mưa.\n"
+            "• Trước khi đi: kiểm tra thời tiết, giờ hoạt động, phương tiện và cảnh báo địa phương."
+        )
+
+    @classmethod
+    def _itinerary_reply(cls, memory: ConversationMemory) -> str:
+        if not memory.destination:
+            return "Để lập lịch ngay, bạn muốn chọn điểm đến cụ thể nào?"
+        if not memory.duration_days:
+            return f"Để lập lịch {memory.destination}, bạn dự định đi bao nhiêu ngày?"
+        destination = cls._target_destination(memory)
+        if destination is None:
+            return (
+                f"TravelMate chưa có danh mục địa điểm được xác thực cho {memory.destination}. "
+                "Bạn có thể chọn một điểm đến trong catalog để mình lập lịch grounded."
+            )
+        group = f" cho {memory.num_people} người" if memory.num_people else ""
+        lines = [f"Lịch gợi ý {memory.duration_days} ngày tại {destination.name}{group}:"]
+        for day in range(1, memory.duration_days + 1):
+            place = destination.places[(day - 1) % len(destination.places)]
+            food = destination.foods[(day - 1) % len(destination.foods)]
+            lines.append(
+                f"Ngày {day}: sáng tham quan {place.name}; trưa thử {food}; "
+                "chiều nghỉ hoặc khám phá khu vực lân cận; tối tự do."
+            )
+        lines.append(
+            "Hãy kiểm tra thời tiết, giờ hoạt động và thời gian di chuyển thực tế trước khi chốt."
+        )
+        return "\n".join(lines)
+
+    @staticmethod
+    def _budget_reply(memory: ConversationMemory) -> str:
+        if memory.budget_vnd is None:
+            return "Để phân bổ ngân sách, tổng mức chi cho cả chuyến là bao nhiêu?"
+        total = memory.budget_vnd
+        accommodation = total * 35 // 100
+        food = total * 25 // 100
+        transport = total * 20 // 100
+        activities = total * 15 // 100
+        reserve = total - accommodation - food - transport - activities
+
+        def format_vnd(value: int) -> str:
+            return f"{value:,}".replace(",", ".") + " VND"
+
+        destination = f" cho chuyến {memory.destination}" if memory.destination else ""
+        group = f" của {memory.num_people} người" if memory.num_people else ""
+        transport_scope = (
+            "di chuyển toàn chuyến"
+            if memory.transport_included
+            else "di chuyển tại điểm đến"
+        )
+        return (
+            f"Phân bổ tham khảo {format_vnd(total)}{destination}{group}:\n"
+            f"• Lưu trú 35%: {format_vnd(accommodation)}.\n"
+            f"• Ăn uống 25%: {format_vnd(food)}.\n"
+            f"• {transport_scope.capitalize()} 20%: {format_vnd(transport)}.\n"
+            f"• Tham quan 15%: {format_vnd(activities)}.\n"
+            f"• Dự phòng 5%: {format_vnd(reserve)}.\n"
+            "Đây là khung dự toán; giá thực tế cần được kiểm tra trước khi đặt dịch vụ."
+        )
 
     @staticmethod
     def _asks_for_known_information(reply: str, memory: ConversationMemory) -> bool:
@@ -403,7 +761,7 @@ class ChatService:
                     "content": memory_text,
                 }
             )
-        messages.extend(message.model_dump() for message in request.history[-4:])
+        messages.extend(message.model_dump() for message in request.history[-8:])
         messages.append({"role": "user", "content": request.message})
         return messages
 
@@ -430,4 +788,5 @@ class ChatService:
 
 @lru_cache
 def get_chat_service() -> ChatService:
-    return ChatService(create_chat_model(settings), settings.llm_provider)
+    model_version = settings.local_model_version if settings.llm_provider == "local" else None
+    return ChatService(create_chat_model(settings), settings.llm_provider, model_version)

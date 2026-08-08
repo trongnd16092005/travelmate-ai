@@ -5,7 +5,8 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
-from app.knowledge.destinations import DESTINATIONS, DestinationKnowledge
+from app.knowledge.destinations import CORE_DESTINATIONS as DESTINATIONS
+from app.knowledge.destinations import DestinationKnowledge
 from training.prepare_dataset import write_jsonl
 from training.validate_dataset import load_and_validate
 

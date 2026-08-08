@@ -27,4 +27,6 @@ export type ChatResponse = {
   isOutOfScope: boolean;
   suggestedQuestions: string[];
   provider: 'mock' | 'gemini' | 'local';
+  modelVersion?: string | null;
+  resetContext?: boolean;
 };

@@ -4,7 +4,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
-from app.knowledge.destinations import DESTINATIONS as DESTINATION_KNOWLEDGE
+from app.knowledge.destinations import CORE_DESTINATIONS as DESTINATION_KNOWLEDGE
 
 SYSTEM_MESSAGE = (
     "Bạn là TravelMate, trợ lý chuyên tư vấn du lịch bằng tiếng Việt. "
