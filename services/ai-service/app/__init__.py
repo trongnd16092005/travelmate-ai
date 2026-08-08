@@ -1,2 +1,1 @@
 """TravelMate AI service."""
-

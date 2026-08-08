@@ -1,0 +1,86 @@
+# Đánh giá độ tự nhiên của chat trong app — 2026-08-05
+
+## Phạm vi
+
+Đánh giá trực tiếp giao diện Expo Web tại `/ai`, FastAPI và provider Gemini với
+ngữ cảnh Đà Nẵng, 2 người, ngân sách 5 triệu. Bài thử tập trung vào hội thoại
+nhiều lượt thay vì loss/token accuracy.
+
+## Phát hiện ban đầu
+
+1. Frontend đang gọi cổng 8001, nơi một service cũ dùng provider mock. Phản hồi
+   mẫu lặp lại nguyên câu hỏi nên trông máy móc; đây là lỗi cấu hình runtime,
+   không liên quan dữ liệu train.
+2. Sau khi nối đúng Gemini, lượt đầu hỏi thông tin thiếu khá tự nhiên. Lượt hai
+   đôi lúc tự viết lịch trình dài dù người dùng chỉ vừa bổ sung thời lượng.
+3. Gemini dùng Markdown nhưng `ChatBubble` chỉ render text thường, làm lộ dấu
+   `**`, tiêu đề và bullet Markdown.
+4. Guardrail cũ chặn cả gợi ý hợp lệ “đi phố cổ Hội An rồi về Đà Nẵng” vì thấy
+   địa điểm thuộc một destination khác.
+5. Cách xưng hô có thể đổi giữa `em`, `mình`, `anh/chị`; một lượt đôi lúc hỏi hai
+   trường thông tin cùng lúc.
+
+## Điều chỉnh
+
+- Prompt buộc dùng `mình - bạn`, không chào lại mỗi lượt, trả lời 2-5 câu, hỏi
+  đúng một thông tin còn thiếu và không tự lập lịch dài khi chưa được yêu cầu.
+- Prompt không cho Markdown; backend vẫn chuẩn hóa heading, bold, code và bullet
+  sang text thường để phòng provider không tuân thủ.
+- Guardrail cho phép địa điểm ngoài destination chính khi phản hồi ghi rõ tên
+  destination thật; địa điểm bị gán sai mà không nêu địa giới vẫn bị chặn.
+- Thêm test cho chuyến đi lân cận hợp lệ, địa điểm sai tỉnh, Markdown và phản
+  hồi lặp nguyên câu hỏi.
+
+## Kết quả kiểm thử lại
+
+Hội thoại hai lượt sau sửa:
+
+1. Người dùng chỉ xác nhận muốn đi Đà Nẵng. AI tóm tắt ngắn ngữ cảnh hiện có và
+   chỉ hỏi số ngày.
+2. Người dùng trả lời 3 ngày 2 đêm, thích ăn uống và không muốn lịch dày. AI nhớ
+   đúng các yêu cầu, xác nhận trong một câu rồi chỉ hỏi thời gian khởi hành.
+
+Không còn Markdown thô, đổi đại từ, bài tư vấn dài ngoài yêu cầu hoặc false
+positive về Hội An trong lần kiểm thử cuối. Guardrail an toàn/ngoài phạm vi vẫn
+được kiểm tra bằng unit test.
+
+## Dữ liệu v4
+
+V3 chủ yếu gồm hội thoại một lượt nên chưa đủ để Qwen học phong cách trên. Bộ v4
+bổ sung 240 hội thoại bốn lượt trên 20 điểm đến:
+
+- 80 ca hỏi lần lượt các tham số còn thiếu.
+- 60 ca người dùng sửa ý hoặc thu hẹp phạm vi.
+- 40 ca trao đổi ngân sách.
+- 40 ca câu hỏi nối tiếp về địa điểm/ẩm thực.
+- 20 ca ngôn ngữ đời thường, giữ riêng làm test.
+
+Split mới là 200 train, 20 validation và 20 test; không trùng prompt challenge.
+Lần train v4 đầu tiên dùng system prompt đầy đủ khiến cả 200 mẫu train nhiều lượt
+và 20 mẫu validation mới vượt giới hạn 512 token. Train loss đạt 0,6230 nhưng
+validation loss là NaN, vì vậy candidate này bị loại và không được đưa vào app.
+
+System prompt trong dữ liệu sau đó được rút gọn mà vẫn giữ các quy tắc chính.
+Kết quả đo lại: không còn prompt nào chiếm hết 512 token; prompt dài nhất là 415
+token và hội thoại v4 đầy đủ dài nhất là 261 token. Pipeline train cũng được bổ
+sung kiểm tra để từ chối cấu hình làm mất toàn bộ completion trước khi tải model.
+
+## Candidate v4-fixed
+
+Candidate sửa lỗi được train lại từ base Qwen3-4B trên 2.020 mẫu train:
+
+- Train loss: 0,6685.
+- Validation loss: 0,3376; không còn NaN.
+- Thời gian train: 1.870 giây, 127 optimizer step.
+- Hội thoại mục tiêu nhớ đúng Miền Trung, 6 người, Huế, 3 ngày và 10 triệu.
+- Cửa sổ raw history giảm còn 4 tin nhắn; bộ nhớ có cấu trúc vẫn tổng hợp toàn
+  bộ history. Nhờ đó câu hỏi mở về văn hóa và ẩm thực không còn lặp lại ngữ cảnh.
+- 5 ca test riêng với cách nói “3 hôm” đều nhận đúng điểm đến, thời lượng và số
+  người; backend chỉ hỏi một trường còn thiếu.
+
+Challenge adapter thuần đạt 0,52, thấp hơn v3 là 0,64. `no_transaction` vẫn đạt
+1,0 và `ask_clarification` giữ 0,6667, nhưng `safety_caveat`, `realtime_limit`
+và `out_of_scope_marker` giảm. Vì vậy không đổi adapter mặc định trong mã nguồn.
+V4-fixed chỉ được dùng trong `.env` local để tiếp tục đánh giá hội thoại sau lớp
+guardrail FastAPI; vòng dữ liệu tiếp theo cần tăng các ca an toàn và realtime mà
+không làm mất hội thoại nhiều lượt.

@@ -26,6 +26,7 @@ services:
       CORE_API_URL: http://core-api:8080
       LLM_PROVIDER: ${LLM_PROVIDER:-mock}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.6-flash}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
     ports:
       - "8000:8000"

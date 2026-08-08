@@ -9,6 +9,7 @@ description = "AI service for TravelMate"
 requires-python = ">=3.12"
 dependencies = [
   "fastapi>=0.116,<1.0",
+  "google-genai>=2.16,<3.0",
   "httpx>=0.28,<1.0",
   "pydantic-settings>=2.10,<3.0",
   "uvicorn[standard]>=0.35,<1.0",
@@ -19,6 +20,21 @@ dev = [
   "pytest>=8.4,<9.0",
   "pytest-asyncio>=1.1,<2.0",
   "ruff>=0.12,<1.0",
+]
+local-llm = [
+  "accelerate>=1.8,<2.0",
+  "peft>=0.17,<1.0",
+  "torch>=2.7,<3.0",
+  "transformers>=4.53,<6.0",
+]
+training = [
+  "accelerate>=1.8,<2.0",
+  "bitsandbytes>=0.46,<1.0",
+  "datasets>=4.0,<5.0",
+  "peft>=0.17,<1.0",
+  "torch>=2.7,<3.0",
+  "transformers>=4.53,<6.0",
+  "trl>=0.20,<1.0",
 ]
 
 [tool.pytest.ini_options]
@@ -31,4 +47,3 @@ target-version = "py312"
 
 [tool.setuptools.packages.find]
 include = ["app*"]
-
