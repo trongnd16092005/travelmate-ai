@@ -1,449 +1,167 @@
-import { useMutation } from '@tanstack/react-query';
-import { isAxiosError } from 'axios';
+import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import { router } from 'expo-router';
 import { useMemo, useState } from 'react';
-import {
-  ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { ImageBackground, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleProp, StyleSheet, Text, TextInput, TextStyle, View, ViewStyle } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { AppScreen, Chip, EmptyState, LoadingState, PrimaryButton, ScreenHeader } from '@/components/ui';
+import { palette, radii, shadows } from '@/constants/design';
+import { useTravel } from '@/context/TravelContext';
+import { useDestinationImage } from '@/hooks/useTravelImage';
+import { apiRequest, formatCompactMoney, formatDate, Trip } from '@/lib/api';
 
-import { generateItinerary } from '@/features/ai/itinerary-service';
-import type {
-  BudgetBreakdown,
-  ItineraryActivity,
-  ItineraryPlan,
-  ItineraryRequest,
-} from '@/features/ai/itinerary-types';
+const travelStyles = [
+  ['RELAXATION', 'Nghỉ dưỡng'],
+  ['CULTURE', 'Văn hoá'],
+  ['ADVENTURE', 'Phiêu lưu'],
+  ['FOOD_TOUR', 'Ẩm thực'],
+] as const;
 
-const periodLabels: Record<ItineraryActivity['period'], string> = {
-  morning: 'Buổi sáng',
-  afternoon: 'Buổi chiều',
-  evening: 'Buổi tối',
-};
-
-function parsePositiveNumber(value: string): number | undefined {
-  const parsed = Number(value.replace(/\D/g, ''));
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
-}
-
-function formatMoney(value: number): string {
-  return `${new Intl.NumberFormat('vi-VN').format(value)} VND`;
-}
-
-function getErrorMessage(error: unknown): string {
-  if (isAxiosError<{ detail?: string }>(error)) {
-    return error.response?.data.detail ?? 'AI Service chưa thể tạo lịch trình.';
-  }
-  return 'Không kết nối được AI Service. Hãy kiểm tra FastAPI và thử lại.';
-}
-
-function BudgetPreview({ budget }: { budget: BudgetBreakdown }) {
-  const rows = [
-    ['Lưu trú', budget.accommodationVnd],
-    ['Ăn uống', budget.foodVnd],
-    ['Di chuyển', budget.transportVnd],
-    ['Trải nghiệm', budget.activitiesVnd],
-    ['Dự phòng', budget.reserveVnd],
-  ] as const;
-
-  return (
-    <View style={styles.budgetCard}>
-      <View style={styles.sectionHeadingRow}>
-        <Text style={styles.sectionTitle}>Phân bổ ngân sách</Text>
-        <Text style={styles.budgetTotal}>{formatMoney(budget.totalVnd)}</Text>
-      </View>
-      {rows.map(([label, value]) => (
-        <View key={label} style={styles.budgetRow}>
-          <Text style={styles.budgetLabel}>{label}</Text>
-          <Text style={styles.budgetValue}>{formatMoney(value)}</Text>
-        </View>
-      ))}
-      <Text style={styles.helperText}>
-        Các khoản do hệ thống tính để tổng luôn khớp ngân sách. Giá thực tế cần được kiểm tra.
-      </Text>
-    </View>
-  );
-}
-
-function PlanPreview({ plan }: { plan: ItineraryPlan }) {
-  return (
-    <View style={styles.previewArea}>
-      <View style={styles.summaryCard}>
-        <Text style={styles.previewEyebrow}>BẢN NHÁP AI</Text>
-        <Text style={styles.previewTitle}>
-          {plan.destination} · {plan.durationDays} ngày
-        </Text>
-        <Text style={styles.summaryText}>{plan.summary}</Text>
-        {plan.assumptions.map((assumption) => (
-          <Text key={assumption} style={styles.assumptionText}>
-            • {assumption}
-          </Text>
-        ))}
-      </View>
-
-      <BudgetPreview budget={plan.budget} />
-
-      {plan.days.map((day) => (
-        <View key={day.day} style={styles.dayCard}>
-          <View style={styles.dayNumber}>
-            <Text style={styles.dayNumberText}>{day.day}</Text>
-          </View>
-          <View style={styles.dayContent}>
-            <Text style={styles.dayTitle}>{day.title}</Text>
-            {day.activities.map((activity, index) => (
-              <View key={`${day.day}-${activity.period}-${index}`} style={styles.activityRow}>
-                <View style={styles.activityDot} />
-                <View style={styles.activityContent}>
-                  <Text style={styles.periodText}>{periodLabels[activity.period]}</Text>
-                  <Text style={styles.activityTitle}>{activity.title}</Text>
-                  {activity.placeName ? (
-                    <Text style={styles.activityMeta}>{activity.placeName}</Text>
-                  ) : null}
-                  {activity.notes ? <Text style={styles.activityNotes}>{activity.notes}</Text> : null}
-                </View>
-              </View>
-            ))}
-          </View>
-        </View>
-      ))}
-    </View>
-  );
+function toDate(offset: number) {
+  const date = new Date();
+  date.setDate(date.getDate() + offset);
+  return date.toISOString().slice(0, 10);
 }
 
 export default function TripsScreen() {
-  const [destination, setDestination] = useState('');
-  const [durationDays, setDurationDays] = useState('');
-  const [numPeople, setNumPeople] = useState('');
-  const [budget, setBudget] = useState('');
-  const [preferences, setPreferences] = useState('');
-  const [notes, setNotes] = useState('');
-  const [accepted, setAccepted] = useState(false);
+  const { trips, activeTripId, loadingTrips, reloadTrips, setActiveTripId } = useTravel();
+  const [showCreate, setShowCreate] = useState(false);
+  const grouped = useMemo(() => ({
+    active: trips.filter((trip) => trip.status === 'ONGOING' || trip.status === 'UPCOMING' || trip.status === 'PLANNING'),
+    completed: trips.filter((trip) => trip.status === 'COMPLETED'),
+  }), [trips]);
 
-  const mutation = useMutation({
-    mutationFn: generateItinerary,
-    onSuccess: () => setAccepted(false),
-  });
-
-  const plan = mutation.data?.plan ?? null;
-  const providerLabel = useMemo(() => {
-    if (mutation.data?.provider === 'local') return 'Qwen local';
-    if (mutation.data?.provider === 'gemini') return 'Gemini API';
-    if (mutation.data?.provider === 'mock') return 'Mock API';
-    return null;
-  }, [mutation.data?.provider]);
-
-  function submit() {
-    if (mutation.isPending) return;
-    const request: ItineraryRequest = {
-      destination: destination.trim() || undefined,
-      durationDays: parsePositiveNumber(durationDays),
-      numPeople: parsePositiveNumber(numPeople),
-      budgetVnd: parsePositiveNumber(budget),
-      preferences: preferences
-        .split(',')
-        .map((item) => item.trim())
-        .filter(Boolean),
-      notes: notes.trim() || undefined,
-    };
-    mutation.mutate(request);
+  function openTrip(trip: Trip) {
+    setActiveTripId(trip.id);
+    router.push({ pathname: '/trip/[id]', params: { id: String(trip.id) } });
   }
 
   return (
-    <SafeAreaView edges={['bottom']} style={styles.safeArea}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
-        style={styles.container}>
-        <ScrollView
-          contentContainerStyle={styles.scrollContent}
-          keyboardShouldPersistTaps="handled">
-          <View style={styles.header}>
-            <View>
-              <Text style={styles.eyebrow}>TRAVELMATE PLANNER</Text>
-              <Text style={styles.title}>Tạo lịch trình AI</Text>
-            </View>
-            {providerLabel ? (
-              <View style={styles.providerBadge}>
-                <View style={styles.statusDot} />
-                <Text style={styles.providerText}>{providerLabel}</Text>
-              </View>
-            ) : null}
-          </View>
+    <AppScreen>
+      <ScreenHeader eyebrow="BỘ SƯU TẬP HÀNH TRÌNH" title="Chuyến đi của bạn" subtitle="Mỗi chuyến đi có lịch trình, bản đồ và ngân sách riêng." action={<Pressable style={styles.addButton} onPress={() => setShowCreate(true)}><Ionicons name="add" size={23} color={palette.ink} /></Pressable>} />
+      <View style={styles.filters}><Chip label={`${trips.length} hành trình`} icon="map" active /><Chip label="Đang lên kế hoạch" icon="calendar-outline" /><Chip label="Đã hoàn thành" icon="checkmark-circle-outline" /></View>
 
-          <View style={styles.formCard}>
-            <Text style={styles.formIntro}>
-              Điền những gì bạn đã biết. TravelMate sẽ hỏi lại nếu thiếu thông tin quan trọng.
-            </Text>
-
-            <Text style={styles.fieldLabel}>Điểm đến</Text>
-            <TextInput
-              value={destination}
-              onChangeText={setDestination}
-              placeholder="Ví dụ: Đà Nẵng"
-              style={styles.input}
-            />
-
-            <View style={styles.formRow}>
-              <View style={styles.flexField}>
-                <Text style={styles.fieldLabel}>Số ngày</Text>
-                <TextInput
-                  value={durationDays}
-                  onChangeText={setDurationDays}
-                  keyboardType="number-pad"
-                  placeholder="3"
-                  style={styles.input}
-                />
-              </View>
-              <View style={styles.flexField}>
-                <Text style={styles.fieldLabel}>Số người</Text>
-                <TextInput
-                  value={numPeople}
-                  onChangeText={setNumPeople}
-                  keyboardType="number-pad"
-                  placeholder="2"
-                  style={styles.input}
-                />
-              </View>
-            </View>
-
-            <Text style={styles.fieldLabel}>Tổng ngân sách (VND)</Text>
-            <TextInput
-              value={budget}
-              onChangeText={setBudget}
-              keyboardType="number-pad"
-              placeholder="5000000"
-              style={styles.input}
-            />
-
-            <Text style={styles.fieldLabel}>Sở thích, ngăn cách bằng dấu phẩy</Text>
-            <TextInput
-              value={preferences}
-              onChangeText={setPreferences}
-              placeholder="biển, ẩm thực, nghỉ dưỡng"
-              style={styles.input}
-            />
-
-            <Text style={styles.fieldLabel}>Lưu ý thêm</Text>
-            <TextInput
-              value={notes}
-              onChangeText={setNotes}
-              multiline
-              placeholder="Có trẻ nhỏ, hạn chế di chuyển xa..."
-              style={[styles.input, styles.notesInput]}
-            />
-
-            <Pressable
-              accessibilityRole="button"
-              disabled={mutation.isPending}
-              onPress={submit}
-              style={({ pressed }) => [
-                styles.generateButton,
-                mutation.isPending && styles.generateButtonDisabled,
-                pressed && styles.buttonPressed,
-              ]}>
-              {mutation.isPending ? (
-                <ActivityIndicator color="#FFFFFF" />
-              ) : (
-                <Text style={styles.generateButtonText}>Tạo lịch trình</Text>
-              )}
-            </Pressable>
-          </View>
-
-          {mutation.data?.status === 'needs_clarification' ? (
-            <View style={styles.questionCard}>
-              <Text style={styles.questionTitle}>Cần thêm thông tin</Text>
-              {mutation.data.questions.map((question) => (
-                <Text key={question} style={styles.questionText}>
-                  • {question}
-                </Text>
-              ))}
-            </View>
-          ) : null}
-
-          {mutation.error ? (
-            <View style={styles.errorCard}>
-              <Text style={styles.errorText}>{getErrorMessage(mutation.error)}</Text>
-            </View>
-          ) : null}
-
-          {plan ? (
-            <>
-              <PlanPreview plan={plan} />
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => setAccepted(true)}
-                style={({ pressed }) => [styles.acceptButton, pressed && styles.buttonPressed]}>
-                <Text style={styles.acceptButtonText}>Dùng lịch trình này</Text>
-              </Pressable>
-              {accepted ? (
-                <View style={styles.acceptedCard}>
-                  <Text style={styles.acceptedTitle}>Đã chọn bản nháp</Text>
-                  <Text style={styles.acceptedText}>
-                    Lịch trình đã được giữ trong phiên hiện tại. Bước lưu lâu dài sẽ nối với Core
-                    API khi module chuyến đi được triển khai.
-                  </Text>
-                </View>
-              ) : null}
-            </>
-          ) : null}
-        </ScrollView>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+      {loadingTrips ? <LoadingState /> : trips.length === 0 ? <EmptyState icon="map-outline" title="Bản đồ còn trống" message="Thêm điểm đến đầu tiên để TravelMate bắt đầu dựng hành trình." action={<PrimaryButton label="Tạo chuyến đi" onPress={() => setShowCreate(true)} />} /> : <>
+        <View style={styles.sectionHeader}><Text style={styles.sectionTitle}>Đang chờ bạn</Text><Text style={styles.sectionCount}>{grouped.active.length.toString().padStart(2, '0')}</Text></View>
+        <View style={styles.tripList}>{grouped.active.map((trip) => <TripCard key={trip.id} trip={trip} active={trip.id === activeTripId} onPress={() => openTrip(trip)} />)}</View>
+        {grouped.completed.length > 0 && <><View style={styles.sectionHeader}><Text style={styles.sectionTitle}>Kỷ niệm đã đi qua</Text><Text style={styles.sectionCount}>{grouped.completed.length.toString().padStart(2, '0')}</Text></View><View style={styles.tripList}>{grouped.completed.map((trip) => <TripCard key={trip.id} trip={trip} active={trip.id === activeTripId} onPress={() => openTrip(trip)} />)}</View></>}
+      </>}
+      <CreateTripModal visible={showCreate} onClose={() => setShowCreate(false)} onCreated={async (trip) => { await reloadTrips(); setActiveTripId(trip.id); setShowCreate(false); router.push({ pathname: '/trip/[id]', params: { id: String(trip.id) } }); }} />
+    </AppScreen>
   );
 }
 
+function TripCard({ trip, active, onPress }: { trip: Trip; active: boolean; onPress: () => void }) {
+  const tripImage = useDestinationImage(trip.destination, trip.coverImageUrl);
+  return (
+    <Pressable onPress={onPress} style={({ pressed }) => [styles.tripCard, pressed && styles.pressed]}>
+      <ImageBackground source={tripImage.source} style={styles.tripArt} imageStyle={styles.tripArtImage}>
+        <LinearGradient colors={['rgba(4,24,19,0.04)', 'rgba(4,24,19,0.88)']} style={[StyleSheet.absoluteFill, styles.tripArtImage]} />
+        <View style={styles.tripTop}><Chip label={active ? 'ĐANG CHỌN' : trip.status} icon="radio-button-on" active={active} /><View style={styles.rolePill}><Ionicons name="people-outline" size={13} color={palette.white} /><Text style={styles.rolePillText}>{trip.memberCount}</Text></View></View>
+        <View style={styles.tripArtCopy}><Text style={styles.tripDestination}>{trip.destination}</Text><Text style={styles.tripName}>{trip.name}</Text></View>
+      </ImageBackground>
+      <View style={styles.tripInfo}>
+        <View style={styles.tripMeta}><View style={styles.tripMetaItem}><Ionicons name="calendar-outline" size={16} color="#76931F" /><Text style={styles.tripMetaText}>{trip.durationDays} ngày</Text></View><View style={styles.tripMetaItem}><Ionicons name="wallet-outline" size={16} color="#76931F" /><Text style={styles.tripMetaText}>{formatCompactMoney(trip.budget)}</Text></View><View style={styles.tripMetaItem}><Ionicons name="people-outline" size={16} color="#76931F" /><Text style={styles.tripMetaText}>{trip.numPeople} người</Text></View></View>
+        <View style={styles.tripFooter}><Text style={styles.tripFooterText}>{formatDate(trip.startDate)} — {formatDate(trip.endDate)}</Text><Ionicons name="arrow-forward" size={18} color={palette.ink} /></View>
+      </View>
+    </Pressable>
+  );
+}
+
+function CreateTripModal({ visible, onClose, onCreated }: { visible: boolean; onClose: () => void; onCreated: (trip: Trip) => Promise<void> }) {
+  const [form, setForm] = useState({ name: '', destination: '', startDate: toDate(7), endDate: toDate(11), budget: '8000000', numPeople: '2', travelStyle: 'CULTURE', description: '' });
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  async function submit() {
+    setError('');
+    if (!form.name.trim() || !form.destination.trim() || !/^\d{4}-\d{2}-\d{2}$/.test(form.startDate) || !/^\d{4}-\d{2}-\d{2}$/.test(form.endDate)) {
+      setError('Nhập tên, điểm đến và ngày theo định dạng YYYY-MM-DD.');
+      return;
+    }
+    if (form.endDate < form.startDate || Number(form.budget) < 0 || Number(form.numPeople) < 1) {
+      setError('Ngày kết thúc phải sau ngày đi; ngân sách và số người cần hợp lệ.');
+      return;
+    }
+    setLoading(true);
+    try {
+      const trip = await apiRequest<Trip>('/api/v1/trips', { method: 'POST', body: JSON.stringify({ ...form, budget: Number(form.budget), numPeople: Number(form.numPeople) }) });
+      apiRequest('/api/v1/ai/generate-itinerary', { method: 'POST', body: JSON.stringify({ tripId: trip.id, travelStyle: form.travelStyle, interests: [], specialRequests: form.description }) }).catch(() => undefined);
+      await onCreated(trip);
+      setForm({ name: '', destination: '', startDate: toDate(7), endDate: toDate(11), budget: '8000000', numPeople: '2', travelStyle: 'CULTURE', description: '' });
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Chưa thể tạo chuyến đi.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <KeyboardAvoidingView style={styles.modalBackdrop} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <SafeAreaView style={styles.modalSafe} edges={['bottom']}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHandle} />
+            <View style={styles.modalHeader}><View><Text style={styles.modalEyebrow}>HÀNH TRÌNH MỚI</Text><Text style={styles.modalTitle}>Bạn muốn đi đâu?</Text></View><Pressable onPress={onClose} style={styles.closeButton}><Ionicons name="close" size={20} color={palette.ink} /></Pressable></View>
+            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={styles.form}>
+              <Field label="Tên chuyến đi" value={form.name} onChangeText={(name) => setForm({ ...form, name })} placeholder="Mùa hè miền Trung" />
+              <Field label="Điểm đến" value={form.destination} onChangeText={(destination) => setForm({ ...form, destination })} placeholder="Huế, Đà Nẵng..." />
+              <View style={styles.twoColumns}><Field label="Khởi hành" value={form.startDate} onChangeText={(startDate) => setForm({ ...form, startDate })} placeholder="YYYY-MM-DD" style={styles.flexField} /><Field label="Kết thúc" value={form.endDate} onChangeText={(endDate) => setForm({ ...form, endDate })} placeholder="YYYY-MM-DD" style={styles.flexField} /></View>
+              <View style={styles.twoColumns}><Field label="Ngân sách" value={form.budget} onChangeText={(budget) => setForm({ ...form, budget })} keyboardType="numeric" style={styles.flexField} /><Field label="Số người" value={form.numPeople} onChangeText={(numPeople) => setForm({ ...form, numPeople })} keyboardType="numeric" style={styles.flexField} /></View>
+              <View><Text style={styles.fieldLabel}>Phong cách</Text><View style={styles.styleChips}>{travelStyles.map(([value, label]) => <Chip key={value} label={label} active={form.travelStyle === value} onPress={() => setForm({ ...form, travelStyle: value })} />)}</View></View>
+              <Field label="Mong muốn đặc biệt" value={form.description} onChangeText={(description) => setForm({ ...form, description })} placeholder="Ẩm thực, chụp ảnh, đi chậm..." multiline inputStyle={styles.textarea} />
+              {error ? <Text style={styles.formError}>{error}</Text> : null}
+              <PrimaryButton label="Tạo và để AI lên lịch" icon="sparkles" loading={loading} onPress={submit} />
+            </ScrollView>
+          </View>
+        </SafeAreaView>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
+function Field({ label, style, inputStyle, ...props }: Omit<React.ComponentProps<typeof TextInput>, 'style'> & { label: string; style?: StyleProp<ViewStyle>; inputStyle?: StyleProp<TextStyle> }) {
+  return <View style={[styles.fieldGroup, style]}><Text style={styles.fieldLabel}>{label}</Text><TextInput style={[styles.fieldInput, inputStyle]} placeholderTextColor="#91A09A" {...props} /></View>;
+}
+
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#F4FAF7' },
-  container: { flex: 1 },
-  scrollContent: {
-    width: '100%',
-    maxWidth: 920,
-    alignSelf: 'center',
-    gap: 14,
-    padding: 18,
-    paddingBottom: 36,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 2,
-  },
-  eyebrow: { color: '#16775A', fontSize: 10, fontWeight: '800', letterSpacing: 1.2 },
-  title: { marginTop: 2, color: '#17352D', fontSize: 25, fontWeight: '800' },
-  providerBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 20,
-    backgroundColor: '#E7F2EE',
-  },
-  statusDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: '#21A179' },
-  providerText: { color: '#48645C', fontSize: 11, fontWeight: '700' },
-  formCard: {
-    gap: 7,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#DDEAE5',
-    borderRadius: 18,
-    backgroundColor: '#FFFFFF',
-  },
-  formIntro: { marginBottom: 6, color: '#587168', fontSize: 13, lineHeight: 19 },
-  fieldLabel: { marginTop: 3, color: '#526A62', fontSize: 11, fontWeight: '700' },
-  input: {
-    minHeight: 42,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderWidth: 1,
-    borderColor: '#D8E5E0',
-    borderRadius: 12,
-    backgroundColor: '#F8FAF9',
-    color: '#17352D',
-    fontSize: 14,
-  },
-  notesInput: { minHeight: 72, textAlignVertical: 'top' },
-  formRow: { flexDirection: 'row', gap: 10 },
-  flexField: { flex: 1, gap: 7 },
-  generateButton: {
-    minHeight: 46,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 8,
-    borderRadius: 14,
-    backgroundColor: '#16775A',
-  },
-  generateButtonDisabled: { backgroundColor: '#8FB9AA' },
-  generateButtonText: { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
-  buttonPressed: { opacity: 0.82 },
-  questionCard: { padding: 15, borderRadius: 16, backgroundColor: '#FFF8E8' },
-  questionTitle: { marginBottom: 5, color: '#845E10', fontSize: 14, fontWeight: '800' },
-  questionText: { color: '#6F5C32', fontSize: 13, lineHeight: 20 },
-  errorCard: { padding: 14, borderRadius: 14, backgroundColor: '#FFF0EF' },
-  errorText: { color: '#A23D35', fontSize: 13, lineHeight: 19 },
-  previewArea: { gap: 12 },
-  summaryCard: { padding: 16, borderRadius: 18, backgroundColor: '#173F34' },
-  previewEyebrow: { color: '#8FDBC0', fontSize: 10, fontWeight: '800', letterSpacing: 1.1 },
-  previewTitle: { marginTop: 4, color: '#FFFFFF', fontSize: 22, fontWeight: '800' },
-  summaryText: { marginTop: 8, color: '#E3F1EC', fontSize: 14, lineHeight: 21 },
-  assumptionText: { marginTop: 6, color: '#BFD8CF', fontSize: 12, lineHeight: 18 },
-  budgetCard: {
-    padding: 15,
-    borderWidth: 1,
-    borderColor: '#DDEAE5',
-    borderRadius: 16,
-    backgroundColor: '#FFFFFF',
-  },
-  sectionHeadingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 8,
-  },
-  sectionTitle: { color: '#29483F', fontSize: 15, fontWeight: '800' },
-  budgetTotal: { color: '#16775A', fontSize: 13, fontWeight: '800' },
-  budgetRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingVertical: 5,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#E5EEEA',
-  },
-  budgetLabel: { color: '#61766F', fontSize: 13 },
-  budgetValue: { color: '#29483F', fontSize: 13, fontWeight: '700' },
-  helperText: { marginTop: 9, color: '#7A8E87', fontSize: 11, lineHeight: 16 },
-  dayCard: {
-    flexDirection: 'row',
-    gap: 12,
-    padding: 15,
-    borderWidth: 1,
-    borderColor: '#DDEAE5',
-    borderRadius: 16,
-    backgroundColor: '#FFFFFF',
-  },
-  dayNumber: {
-    width: 32,
-    height: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 16,
-    backgroundColor: '#D9F1E8',
-  },
-  dayNumberText: { color: '#16775A', fontSize: 13, fontWeight: '800' },
-  dayContent: { flex: 1, gap: 9 },
-  dayTitle: { color: '#29483F', fontSize: 16, fontWeight: '800' },
-  activityRow: { flexDirection: 'row', gap: 9 },
-  activityDot: {
-    width: 7,
-    height: 7,
-    marginTop: 7,
-    borderRadius: 4,
-    backgroundColor: '#67B69A',
-  },
-  activityContent: { flex: 1 },
-  periodText: { color: '#16775A', fontSize: 10, fontWeight: '800', textTransform: 'uppercase' },
-  activityTitle: { marginTop: 1, color: '#29483F', fontSize: 14, fontWeight: '700' },
-  activityMeta: { marginTop: 2, color: '#61766F', fontSize: 12 },
-  activityNotes: { marginTop: 3, color: '#7A8E87', fontSize: 11, lineHeight: 16 },
-  acceptButton: {
-    minHeight: 46,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: '#16775A',
-    borderRadius: 14,
-    backgroundColor: '#FFFFFF',
-  },
-  acceptButtonText: { color: '#16775A', fontSize: 14, fontWeight: '800' },
-  acceptedCard: { padding: 14, borderRadius: 14, backgroundColor: '#E7F5EF' },
-  acceptedTitle: { color: '#16775A', fontSize: 14, fontWeight: '800' },
-  acceptedText: { marginTop: 3, color: '#48645C', fontSize: 12, lineHeight: 18 },
+  addButton: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.lime, borderRadius: 15, ...shadows.card },
+  filters: { marginHorizontal: -18, paddingHorizontal: 18, flexDirection: 'row', gap: 8, overflow: 'hidden' },
+  sectionHeader: { marginTop: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  sectionTitle: { color: palette.ink, fontSize: 19, fontWeight: '900' },
+  sectionCount: { color: '#7B9425', fontSize: 11, fontWeight: '900' },
+  tripList: { gap: 14 },
+  tripCard: { overflow: 'hidden', backgroundColor: 'rgba(255,255,252,0.84)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.94)', borderRadius: radii.xl, ...shadows.card },
+  pressed: { transform: [{ scale: 0.99 }], opacity: 0.95 },
+  tripArt: { height: 215, overflow: 'hidden' },
+  tripArtImage: { borderTopLeftRadius: radii.xl, borderTopRightRadius: radii.xl },
+  tripTop: { padding: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  rolePill: { paddingHorizontal: 10, paddingVertical: 7, flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: 'rgba(5,29,23,0.55)', borderRadius: radii.pill },
+  rolePillText: { color: palette.white, fontSize: 8, fontWeight: '800' },
+  tripArtCopy: { marginTop: 'auto', padding: 17 },
+  tripDestination: { color: palette.lime, fontSize: 7, fontWeight: '900', letterSpacing: 1.1 },
+  tripName: { marginTop: 4, color: palette.white, fontSize: 25, fontWeight: '900', letterSpacing: -1 },
+  tripInfo: { padding: 16 },
+  tripMeta: { flexDirection: 'row', justifyContent: 'space-between' },
+  tripMetaItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  tripMetaText: { color: palette.muted, fontSize: 8, fontWeight: '700' },
+  tripFooter: { marginTop: 15, paddingTop: 13, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderTopWidth: 1, borderTopColor: palette.line },
+  tripFooterText: { color: palette.muted, fontSize: 8 },
+  modalBackdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(4,25,20,0.58)' },
+  modalSafe: { maxHeight: '93%' },
+  modalCard: { maxHeight: '100%', padding: 19, paddingTop: 10, backgroundColor: palette.cream, borderTopLeftRadius: 30, borderTopRightRadius: 30 },
+  modalHandle: { width: 42, height: 4, alignSelf: 'center', marginBottom: 18, backgroundColor: '#CBD5CC', borderRadius: 2 },
+  modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  modalEyebrow: { color: '#76931F', fontSize: 7, fontWeight: '900', letterSpacing: 1.2 },
+  modalTitle: { marginTop: 5, color: palette.ink, fontSize: 27, fontWeight: '900', letterSpacing: -1.2 },
+  closeButton: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.white, borderRadius: 14 },
+  form: { paddingTop: 20, paddingBottom: 24, gap: 14 },
+  twoColumns: { flexDirection: 'row', gap: 10 },
+  flexField: { flex: 1 },
+  fieldGroup: { gap: 7 },
+  fieldLabel: { color: palette.inkSoft, fontSize: 8, fontWeight: '900' },
+  fieldInput: { minHeight: 50, paddingHorizontal: 14, color: palette.ink, backgroundColor: palette.white, borderWidth: 1, borderColor: palette.line, borderRadius: radii.md, fontSize: 11, fontWeight: '700' },
+  textarea: { minHeight: 82, paddingTop: 14, textAlignVertical: 'top' },
+  styleChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 7 },
+  formError: { padding: 11, color: palette.danger, backgroundColor: '#FFF0EC', borderRadius: radii.sm, fontSize: 9, lineHeight: 15 },
 });
