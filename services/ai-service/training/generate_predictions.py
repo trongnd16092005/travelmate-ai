@@ -15,6 +15,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-new-tokens", type=int, default=384)
     parser.add_argument("--limit", type=int)
     parser.add_argument(
+        "--record-id",
+        help="Chỉ sinh lại một record cụ thể để điều tra hoặc sửa ca held-out.",
+    )
+    parser.add_argument(
         "--resume",
         action="store_true",
         help="Ghi tiếp vào file output và bỏ qua các id đã sinh.",
@@ -79,6 +83,10 @@ def main() -> None:
         raise SystemExit(f"Không tìm thấy adapter: {args.adapter_path}")
     if args.limit is not None:
         records = records[: args.limit]
+    if args.record_id is not None:
+        records = [record for record in records if record["id"] == args.record_id]
+        if not records:
+            raise SystemExit(f"Không tìm thấy record id: {args.record_id}")
 
     completed_ids = load_completed_ids(args.output) if args.resume else set()
     pending_records = [record for record in records if record["id"] not in completed_ids]

@@ -35,7 +35,9 @@ class ItineraryRequest(ApiModel):
 
 class ItineraryActivity(ApiModel):
     period: Literal["morning", "afternoon", "evening"]
+    kind: Literal["visit", "meal", "rest", "travel", "free_time"]
     title: str = Field(min_length=1, max_length=160)
+    place_id: str | None = Field(default=None, max_length=200)
     place_name: str | None = Field(default=None, max_length=160)
     notes: str | None = Field(default=None, max_length=300)
 

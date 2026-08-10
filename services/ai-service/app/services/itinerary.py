@@ -5,7 +5,11 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from app.clients.llm.base import ChatModel
-from app.knowledge.destinations import DestinationKnowledge, resolve_destination
+from app.knowledge.destinations import (
+    DestinationKnowledge,
+    grounded_place_by_id,
+    resolve_destination,
+)
 from app.prompts.itinerary import ITINERARY_SYSTEM_PROMPT
 from app.schemas.itinerary import (
     BudgetBreakdown,
@@ -200,7 +204,8 @@ class ItineraryService:
         if destination_knowledge is not None:
             details.append("Danh sách placeId được phép:")
             details.extend(
-                f"- {place.id} | {place.name}" for place in destination_knowledge.places
+                f"- {place_id} | {place.name}"
+                for place_id, place in grounded_place_by_id(destination_knowledge).items()
             )
         else:
             details.append(
@@ -222,7 +227,7 @@ class ItineraryService:
             "travel": "Di chuyển",
             "free_time": "Thời gian tự do",
         }
-        place_by_id = destination.place_by_id if destination is not None else {}
+        place_by_id = grounded_place_by_id(destination) if destination is not None else {}
         grounded_days: list[ItineraryDay] = []
         grounded_visits = 0
 
@@ -258,7 +263,9 @@ class ItineraryService:
                 activities.append(
                     ItineraryActivity(
                         period=activity.period,
+                        kind=activity.kind,
                         title=title,
+                        placeId=activity.place_id,
                         placeName=place_name,
                         notes=None,
                     )

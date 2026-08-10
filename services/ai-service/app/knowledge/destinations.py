@@ -2,6 +2,11 @@ import re
 import unicodedata
 from dataclasses import dataclass
 
+from app.knowledge.province_catalog import (
+    NATIONWIDE_RAW_PROVINCES,
+    RUNTIME_TOURISM_PLACE_EXPANSIONS,
+)
+
 
 @dataclass(frozen=True)
 class PlaceKnowledge:
@@ -305,19 +310,102 @@ DESTINATIONS: tuple[DestinationKnowledge, ...] = tuple(
     for name, aliases, places, foods in RAW_DESTINATIONS
 )
 
+NATIONWIDE_DESTINATIONS: tuple[DestinationKnowledge, ...] = tuple(
+    DestinationKnowledge(
+        id=f"vn-{code}-{slugify(name)}",
+        name=name,
+        aliases=aliases,
+        places=tuple(
+            PlaceKnowledge(id=f"vn-{code}:{slugify(place)}", name=place)
+            for place in places
+        ),
+        foods=foods,
+        region=region,
+        themes=themes,
+    )
+    for code, name, aliases, places, foods, region, themes in NATIONWIDE_RAW_PROVINCES
+)
+
+RUNTIME_NATIONWIDE_DESTINATIONS: tuple[DestinationKnowledge, ...] = tuple(
+    DestinationKnowledge(
+        id=f"vn-{code}-{slugify(name)}",
+        name=name,
+        aliases=aliases,
+        places=tuple(
+            PlaceKnowledge(id=f"vn-{code}:{slugify(place)}", name=place)
+            for place in (*places, *RUNTIME_TOURISM_PLACE_EXPANSIONS.get(name, ()))
+        ),
+        foods=foods,
+        region=region,
+        themes=themes,
+    )
+    for code, name, aliases, places, foods, region, themes in NATIONWIDE_RAW_PROVINCES
+)
+
+_legacy_names = {destination.name for destination in DESTINATIONS}
+RUNTIME_DESTINATIONS: tuple[DestinationKnowledge, ...] = (
+    *DESTINATIONS,
+    *(
+        destination
+        for destination in RUNTIME_NATIONWIDE_DESTINATIONS
+        if destination.name not in _legacy_names
+    ),
+)
+
 # Frozen catalog used to reproduce the audited v1-v5 datasets. Runtime and v6 use
 # DESTINATIONS, while old builders deliberately retain their original 20-item scope.
 CORE_DESTINATIONS: tuple[DestinationKnowledge, ...] = DESTINATIONS[:20]
 
 DESTINATION_BY_KEY: dict[str, DestinationKnowledge] = {
     normalize_lookup_key(value): destination
-    for destination in DESTINATIONS
+    for destination in (*DESTINATIONS, *RUNTIME_NATIONWIDE_DESTINATIONS)
     for value in (destination.name, *destination.aliases)
 }
 
 
 def resolve_destination(value: str) -> DestinationKnowledge | None:
     return DESTINATION_BY_KEY.get(normalize_lookup_key(value))
+
+
+def find_destination_mentions(value: str) -> list[tuple[int, int, DestinationKnowledge]]:
+    """Find catalog destinations in text, resolving legacy aliases to current units."""
+    normalized = normalize_lookup_key(value)
+    matches: list[tuple[int, int, DestinationKnowledge]] = []
+    for key, destination in DESTINATION_BY_KEY.items():
+        for match in re.finditer(rf"(?<!\w){re.escape(key)}(?!\w)", normalized):
+            matches.append((match.start(), match.end(), destination))
+    return matches
+
+
+def grounded_place_by_id(destination: DestinationKnowledge) -> dict[str, PlaceKnowledge]:
+    """Return current and backward-compatible place IDs for one province catalog entry."""
+    places = dict(destination.place_by_id)
+    for legacy_destination in DESTINATIONS:
+        mapped_destination = DESTINATION_BY_KEY.get(
+            normalize_lookup_key(legacy_destination.name)
+        )
+        if mapped_destination is not None and mapped_destination.name == destination.name:
+            places.update(legacy_destination.place_by_id)
+    return places
+
+
+def format_grounded_catalog_context(destination: DestinationKnowledge) -> str:
+    """Build the single source-of-truth context shared by runtime and training."""
+    allowed_places = "; ".join(
+        f"{place_id} | {place.name}"
+        for place_id, place in grounded_place_by_id(destination).items()
+    )
+    allowed_foods = "; ".join(destination.foods)
+    return (
+        "[GROUNDED_CATALOG]\n"
+        f"Tỉnh/thành hiện hành: {destination.name}\n"
+        f"Địa điểm được phép: {allowed_places}\n"
+        f"Ẩm thực được phép: {allowed_foods}\n"
+        "Không tạo thêm tên địa điểm hoặc món ăn ngoài danh sách. Nếu dữ liệu không đủ, "
+        "nói rõ chưa có trong catalog. Không khẳng định giá, giờ mở cửa, thời tiết hay "
+        "tình trạng dịch vụ khi chưa có nguồn realtime.\n"
+        "[/GROUNDED_CATALOG]"
+    )
 
 
 def recommend_destinations(
@@ -333,7 +421,38 @@ def recommend_destinations(
     }
     candidates = [
         destination
-        for destination in DESTINATIONS
+        for destination in RUNTIME_DESTINATIONS
+        if region is None or destination.region == region
+    ]
+    ranked = sorted(
+        candidates,
+        key=lambda destination: -len(
+            normalized_themes
+            & {normalize_lookup_key(theme) for theme in destination.themes}
+        ),
+    )
+    if normalized_themes:
+        matching = [
+            destination
+            for destination in ranked
+            if normalized_themes
+            & {normalize_lookup_key(theme) for theme in destination.themes}
+        ]
+        if matching:
+            ranked = matching
+    return tuple(ranked[:limit])
+
+
+def recommend_provinces(
+    region: str | None = None,
+    themes: tuple[str, ...] = (),
+    limit: int = 5,
+) -> tuple[DestinationKnowledge, ...]:
+    """Recommend only current province-level units from the nationwide catalog."""
+    normalized_themes = {normalize_lookup_key(theme) for theme in themes}
+    candidates = [
+        destination
+        for destination in RUNTIME_NATIONWIDE_DESTINATIONS
         if region is None or destination.region == region
     ]
     ranked = sorted(

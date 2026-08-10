@@ -1,6 +1,6 @@
 # Huấn luyện TravelMate Chatbot
 
-Xem [lịch sử cập nhật v1-v10](VERSION_HISTORY.md) để biết mục tiêu, dữ liệu,
+Xem [lịch sử cập nhật v1-v12](VERSION_HISTORY.md) để biết mục tiêu, dữ liệu,
 kết quả đánh giá và quyết định phát hành của từng phiên bản.
 
 Pipeline fine-tune `Qwen/Qwen3-4B` bằng QLoRA được chia thành bốn giai đoạn,
@@ -495,6 +495,133 @@ python -m training.train_qlora \
 hồi bằng `training.generate_predictions`, chấm bằng
 `python -m training.evaluate_reasoning`, rồi chạy lại `ux_test`,
 `transition_test` và `intent_test` để phát hiện quên năng lực cũ.
+
+### Phủ toàn quốc v11
+
+V11 mở rộng grounding theo danh mục **34 đơn vị hành chính cấp tỉnh** có hiệu
+lực từ 01/07/2025. Tên của các tỉnh, thành trước sắp xếp được giữ làm alias để
+hiểu câu hỏi cũ, nhưng câu trả lời và mã catalog dùng tên hiện hành. Nguồn tên
+và mã tỉnh là Quyết định 19/2025/QĐ-TTg được Cổng Thông tin điện tử Chính phủ
+công bố.
+
+Dataset mới có 952 mẫu cân bằng, đúng 28 mẫu cho mỗi tỉnh/thành: 748 lịch trình
+JSON grounded và 204 hội thoại nhận diện alias/gợi ý. Khi train, 748 mẫu train
+mới được trộn với 700 mẫu replay v10; validation gồm 102 mẫu mới và 120 replay.
+Các tập reasoning, UX, transition, intent, challenge và structured held-out cũ
+được bảo vệ khỏi train.
+
+```bash
+python -m training.build_nationwide_v11 \
+  --processed-v10-dir training/data/processed/reasoning_v10 \
+  --challenge training/data/challenge_v1.jsonl \
+  --reinforcement-output training/data/reinforcement_v11.jsonl \
+  --processed-output-dir training/data/processed/nationwide_v11 \
+  --approved-at YYYY-MM-DD
+
+python -m training.train_qlora \
+  --train-dataset training/data/processed/nationwide_v11/train.jsonl \
+  --eval-dataset training/data/processed/nationwide_v11/validation.jsonl \
+  --init-adapter-path artifacts/travelmate-qwen3-4b-lora-v10-reasoning-guarded \
+  --output-dir artifacts/travelmate-qwen3-4b-lora-v11-nationwide \
+  --epochs 1 --max-length 512 --learning-rate 1e-5 \
+  --gradient-accumulation-steps 16 --lora-r 8 --lora-alpha 16 \
+  --save-steps 20
+```
+
+Builder tạo hai tập chấm riêng: `nationwide_structured_smoke_test.jsonl` có
+34 lịch trình (mỗi tỉnh/thành một ca) và `nationwide_alias_test.jsonl` có 34
+ca nhận diện tên hiện hành. Candidate chỉ được promote nếu vượt hai tập này và
+không làm giảm các regression v10.
+
+Kết quả lần chạy ngày 10/08/2026: train loss `0,4980`, validation loss
+`0,4168`; structured smoke đạt `34/34`, alias/free-text đạt `22/34`. Do suite
+alias chưa đạt, v11 được giữ làm candidate và production vẫn là v10. Báo cáo
+đầy đủ ở
+[`experiments/2026-08-10-local-qwen3-4b-v11.md`](experiments/2026-08-10-local-qwen3-4b-v11.md).
+
+Sinh và chấm hai suite nationwide bằng:
+
+```bash
+python -m training.generate_predictions \
+  --dataset training/data/processed/nationwide_v11/nationwide_structured_smoke_test.jsonl \
+  --adapter-path artifacts/travelmate-qwen3-4b-lora-v11-nationwide \
+  --output training/outputs/v11_nationwide_structured_predictions.jsonl \
+  --max-new-tokens 384
+
+python -m training.evaluate_nationwide \
+  --dataset training/data/processed/nationwide_v11/nationwide_structured_smoke_test.jsonl \
+  --predictions training/outputs/v11_nationwide_structured_predictions.jsonl \
+  --output training/outputs/v11_nationwide_structured_report.json
+```
+
+### Grounded conversation v12
+
+V12 tiếp tục từ v11 để model đọc `[GROUNDED_CATALOG]`, trả đúng tên tỉnh hiện
+hành và ba địa điểm được cấp, đồng thời từ chối tự điền giá vé/giờ mở cửa khi
+chưa có nguồn realtime. Builder giữ các tập held-out cũ ngoài train và tạo tập
+grounded riêng 102 mẫu, đúng ba ca cho mỗi tỉnh/thành.
+
+```bash
+python -m training.build_grounded_conversation_v12 \
+  --processed-v11-dir training/data/processed/nationwide_v11 \
+  --reinforcement-output training/data/reinforcement_v12.jsonl \
+  --processed-output-dir training/data/processed/grounded_conversation_v12 \
+  --approved-at YYYY-MM-DD
+```
+
+Lần train đầu trộn 684 mẫu mới với 900 replay v11. Early canary phát hiện model
+vẫn bịa giá/giờ, nên không được promote. Curriculum r2 tiếp tục từ adapter đó
+trên riêng 684 mẫu grounded mới, trong đó có 374 ca realtime/hard-negative:
+
+```bash
+python -m training.train_qlora \
+  --train-dataset training/data/processed/grounded_conversation_v12/grounded_conversation_train.jsonl \
+  --eval-dataset training/data/processed/grounded_conversation_v12/grounded_conversation_validation.jsonl \
+  --init-adapter-path artifacts/travelmate-qwen3-4b-lora-v12-grounded-conversation \
+  --output-dir artifacts/travelmate-qwen3-4b-lora-v12-grounded-conversation-r2 \
+  --epochs 1 --max-length 512 --learning-rate 2e-5 \
+  --gradient-accumulation-steps 16 --lora-r 8 --lora-alpha 16 \
+  --save-steps 20
+```
+
+R2 đạt train loss `0,1521`, validation loss `0,02869` và validation token
+accuracy `99,27%`. Trên 102 mẫu held-out: tên tỉnh `102/102`, đủ ba địa điểm
+`100/102`, ranh giới realtime `101/102`, khớp mẫu nghiêm ngặt `89/102`.
+Hai lỗi nội dung thật còn lại là Quảng Ngãi bỏ sót `chứng tích Sơn Mỹ` và An
+Giang thay `Hà Tiên` bằng một điểm ngoài catalog. Vì cổng phát hành yêu cầu
+grounded conversation `102/102`, r2 vẫn là candidate và production vẫn là v10.
+Nationwide structured smoke của chính r2 vẫn giữ `34/34` itinerary đúng schema
+và whitelist.
+
+R3 tiếp tục từ r2 trên cùng 684 mẫu grounded bằng một epoch sửa lỗi, learning
+rate `5e-6`. Bản này đạt train loss `0,006539`, validation loss `0,01532` và
+validation token accuracy `99,76%`. Held-out đạt tên tỉnh, đủ ba địa điểm và
+ranh giới realtime đều `102/102`; structured itinerary giữ `34/34`; demo
+runtime đạt `20/20`. Vì vậy r3 được promote thành adapter production.
+
+```bash
+python -m training.train_qlora \
+  --train-dataset training/data/processed/grounded_conversation_v12/grounded_conversation_train.jsonl \
+  --eval-dataset training/data/processed/grounded_conversation_v12/grounded_conversation_validation.jsonl \
+  --init-adapter-path artifacts/travelmate-qwen3-4b-lora-v12-grounded-conversation-r2 \
+  --output-dir artifacts/travelmate-qwen3-4b-lora-v12-grounded-conversation-r3 \
+  --epochs 1 --max-length 512 --learning-rate 5e-6 \
+  --gradient-accumulation-steps 16 --lora-r 8 --lora-alpha 16 \
+  --save-steps 20
+```
+
+```bash
+python -m training.generate_predictions \
+  --dataset training/data/processed/grounded_conversation_v12/grounded_conversation_test.jsonl \
+  --adapter-path artifacts/travelmate-qwen3-4b-lora-v12-grounded-conversation-r3 \
+  --output training/outputs/v12_r3_grounded_conversation_predictions.jsonl \
+  --max-new-tokens 192
+
+python -m training.evaluate_grounded_conversation \
+  --dataset training/data/processed/grounded_conversation_v12/grounded_conversation_test.jsonl \
+  --predictions training/outputs/v12_r3_grounded_conversation_predictions.jsonl \
+  --output training/outputs/v12_r3_grounded_conversation_report.json
+```
 
 ## 3. Đánh giá
 

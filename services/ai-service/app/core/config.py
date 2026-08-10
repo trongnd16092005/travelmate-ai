@@ -16,15 +16,20 @@ class Settings(BaseSettings):
     )
     llm_provider: Literal["mock", "gemini", "local"] = "mock"
     local_model_id: str = "Qwen/Qwen3-4B"
-    local_adapter_path: str = "artifacts/travelmate-qwen3-4b-lora-v10-reasoning-guarded"
+    local_adapter_path: str = "artifacts/travelmate-qwen3-4b-lora-v12-grounded-conversation-r3"
     local_model_device: str = "auto"
     local_model_load_in_4bit: bool = True
-    local_model_max_new_tokens: int = 512
+    local_model_max_new_tokens: int = 192
     gemini_api_key: str = ""
     gemini_model: str = "gemini-3.6-flash"
     gemini_temperature: float = 0.4
     gemini_max_output_tokens: int = 1536
     openai_api_key: str = ""
+    realtime_weather_enabled: bool = True
+    realtime_weather_timeout_seconds: float = 5.0
+    realtime_weather_cache_ttl_seconds: int = 900
+    place_geocoding_timeout_seconds: float = 5.0
+    place_geocoding_cache_ttl_seconds: int = 86400
 
     model_config = SettingsConfigDict(
         env_file=".env",

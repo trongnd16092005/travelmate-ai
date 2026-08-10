@@ -66,7 +66,7 @@ def test_chat_service_injects_trip_context_and_history() -> None:
     service = ChatService(model, "mock")
     request = ChatRequest.model_validate(
         {
-            "message": "Ngày thứ hai nên đi đâu?",
+            "message": "Tư vấn thêm cho chuyến đi",
             "history": [
                 {"role": "user", "content": "Tôi muốn đi biển"},
                 {"role": "assistant", "content": "Bạn có thể đi Mỹ Khê"},
@@ -86,7 +86,7 @@ def test_chat_service_injects_trip_context_and_history() -> None:
     assert "Điểm đến: Đà Nẵng" in model.messages[1]["content"]
     assert "Ngày bắt đầu: 2026-08-20" in model.messages[1]["content"]
     assert "Ngày kết thúc: 2026-08-22" in model.messages[1]["content"]
-    assert model.messages[-1] == {"role": "user", "content": "Ngày thứ hai nên đi đâu?"}
+    assert model.messages[-1] == {"role": "user", "content": "Tư vấn thêm cho chuyến đi"}
 
 
 def test_chat_only_sends_eight_recent_raw_messages_to_model() -> None:
@@ -151,8 +151,8 @@ def test_chat_memory_reads_twenty_messages_but_model_only_gets_eight() -> None:
 
     assert "Điểm đến: Huế" in messages[1]["content"]
     assert "Ưu tiên trải nghiệm: ẩm thực" in messages[1]["content"]
-    assert "Mình đi Huế, thích ẩm thực và lịch thư thả." not in raw_contents[2:]
-    assert len(raw_contents[2:-1]) == 8
+    assert "Mình đi Huế, thích ẩm thực và lịch thư thả." not in raw_contents[3:]
+    assert len(raw_contents[3:-1]) == 8
 
 
 @pytest.mark.parametrize(
@@ -348,8 +348,8 @@ def _completed_da_nang_request(message: str) -> ChatRequest:
     [
         ("đổi sang Huế", "Huế"),
         ("giờ tôi muốn đi Cần Thơ", "Cần Thơ"),
-        ("chuyển qua Phú Quốc nhé", "Phú Quốc"),
-        ("thay bằng Hà Giang", "Hà Giang"),
+        ("chuyển qua Phú Quốc nhé", "An Giang"),
+        ("thay bằng Hà Giang", "Tuyên Quang"),
     ],
 )
 def test_chat_new_destination_resets_trip_scoped_slots(
@@ -370,11 +370,11 @@ def test_chat_new_destination_resets_trip_scoped_slots(
 @pytest.mark.parametrize(
     ("message", "new_destination"),
     [
-        ("chọn Hà Giang thay cho Đà Nẵng", "Hà Giang"),
-        ("chọn Hà Giang thay vì Đà Nẵng", "Hà Giang"),
-        ("thay Đà Nẵng bằng Hà Giang", "Hà Giang"),
-        ("đổi từ Đà Nẵng sang Hà Giang", "Hà Giang"),
-        ("chuyển từ Đà Nẵng qua Hà Giang", "Hà Giang"),
+        ("chọn Hà Giang thay cho Đà Nẵng", "Tuyên Quang"),
+        ("chọn Hà Giang thay vì Đà Nẵng", "Tuyên Quang"),
+        ("thay Đà Nẵng bằng Hà Giang", "Tuyên Quang"),
+        ("đổi từ Đà Nẵng sang Hà Giang", "Tuyên Quang"),
+        ("chuyển từ Đà Nẵng qua Hà Giang", "Tuyên Quang"),
     ],
 )
 def test_chat_destination_replacement_selects_semantic_target(
@@ -432,7 +432,7 @@ def test_chat_multi_slot_followup_uses_progress_reply() -> None:
 
     response = service.chat(request)
 
-    assert "Hà Giang 4 ngày cho 3 người" in response.reply
+    assert "Tuyên Quang 4 ngày cho 3 người" in response.reply
     assert "12.000.000 VND" in response.reply
     assert "đã gồm chi phí di chuyển" in response.reply
     assert model.messages == []
@@ -680,6 +680,85 @@ def test_chat_short_beach_answer_uses_region_and_theme_catalog() -> None:
     assert "Với ưu tiên biển ở Miền Bắc" in response.reply
     assert "Hạ Long" in response.reply
     assert "Quan Lạn" in response.reply
+    assert model.messages == []
+
+
+def test_chat_short_destination_selection_does_not_load_model() -> None:
+    model = CapturingChatModel("không nên được gọi")
+    service = ChatService(model, "local")
+    request = ChatRequest.model_validate(
+        {
+            "message": "Đi Hạ Long",
+            "history": [
+                {"role": "user", "content": "Gợi ý đi chơi ở miền bắc"},
+                {
+                    "role": "assistant",
+                    "content": (
+                        "Mình đã ghi nhận chuyến Miền Bắc. Bạn muốn ưu tiên biển, "
+                        "văn hóa hay thiên nhiên để mình gợi ý điểm đến phù hợp?"
+                    ),
+                },
+                {"role": "user", "content": "Thiên nhiên"},
+                {
+                    "role": "assistant",
+                    "content": (
+                        "Với ưu tiên thiên nhiên ở Miền Bắc, mình gợi ý: Sa Pa; "
+                        "Ninh Bình; Hạ Long; Hà Giang; Cao Bằng. Bạn chọn một nơi."
+                    ),
+                },
+            ],
+        }
+    )
+
+    response = service.chat(request)
+
+    assert "Hạ Long thuộc Quảng Ninh" in response.reply
+    assert "bao nhiêu ngày" in response.reply
+    assert model.messages == []
+
+
+def test_chat_asks_for_clarification_on_mixed_typo() -> None:
+    model = CapturingChatModel("không nên được gọi")
+    response = ChatService(model, "local").chat(ChatRequest(message="2ngywofi"))
+
+    assert "chưa hiểu rõ" in response.reply
+    assert "2 người" in response.reply
+    assert "3 ngày" in response.reply
+    assert model.messages == []
+
+
+def test_chat_does_not_guess_opening_hours_or_ticket_prices() -> None:
+    model = CapturingChatModel("không nên được gọi")
+    request = ChatRequest.model_validate(
+        {
+            "message": "Cho tôi biết giờ hoạt động và giá vé",
+            "history": [
+                {"role": "user", "content": "Đi Hà Nội 3 ngày"},
+                {"role": "assistant", "content": "Mình đã ghi nhận Hà Nội."},
+            ],
+        }
+    )
+
+    response = ChatService(model, "local").chat(request)
+
+    assert "nguồn realtime" in response.reply
+    assert "Hà Nội" in response.reply
+    assert "không tự đưa ra con số hay khung giờ" in response.reply
+    assert model.messages == []
+
+
+def test_hot_destination_recommends_expanded_catalog_unless_three_requested() -> None:
+    model = CapturingChatModel("không nên được gọi")
+    service = ChatService(model, "local")
+
+    expanded = service.chat(ChatRequest(message="Nên đi đâu ở Hà Nội?"))
+    limited = service.chat(ChatRequest(message="Gợi ý ba điểm ở Hà Nội"))
+
+    assert "6 điểm" in expanded.reply
+    assert "Nhà tù Hỏa Lò" in expanded.reply
+    assert "Hồ Tây" in expanded.reply
+    assert "ba điểm" in limited.reply
+    assert "Nhà tù Hỏa Lò" not in limited.reply
     assert model.messages == []
 
 
@@ -960,7 +1039,7 @@ def test_safety_guardrails_do_not_call_model(message: str, expected: str) -> Non
     assert model.messages == []
 
 
-def test_chat_rejects_known_place_from_another_destination() -> None:
+def test_chat_replaces_known_place_from_another_destination_with_catalog() -> None:
     model = CapturingChatModel("Bạn có thể ghé chùa Thiên Mụ và nghỉ ngơi.")
     service = ChatService(model, "local")
 
@@ -976,7 +1055,9 @@ def test_chat_rejects_known_place_from_another_destination() -> None:
         )
     )
 
-    assert "chưa khớp với Ninh Bình" in response.reply
+    assert "Ninh Bình" in response.reply
+    assert "Tràng An" in response.reply
+    assert "chùa Thiên Mụ" not in response.reply
 
 
 def test_chat_allows_explicitly_named_neighboring_destination() -> None:
@@ -1010,12 +1091,11 @@ def test_chat_replaces_echoed_user_message() -> None:
 
 
 def test_chat_converts_markdown_to_plain_text() -> None:
-    model = CapturingChatModel("### Gợi ý\n\n* **Ăn sáng:** mì Quảng\n* `Đi bộ` nhẹ")
-    service = ChatService(model, "local")
+    reply = ChatService._to_plain_text(
+        "### Gợi ý\n\n* **Ăn sáng:** mì Quảng\n* `Đi bộ` nhẹ"
+    )
 
-    response = service.chat(ChatRequest(message="Gợi ý ngắn cho Đà Nẵng"))
-
-    assert response.reply == "Gợi ý\n\n• Ăn sáng: mì Quảng\n• Đi bộ nhẹ"
+    assert reply == "Gợi ý\n\n• Ăn sáng: mì Quảng\n• Đi bộ nhẹ"
 
 
 @pytest.mark.parametrize(
@@ -1035,7 +1115,7 @@ def test_chat_converts_markdown_to_plain_text() -> None:
         ),
         (
             "Ngày tới TP. Hồ Chí Minh có chắc chợ Bến Thành mở và không mưa không?",
-            ("chưa thể khẳng định", "kiểm tra", "nếu không"),
+            ("chưa kết nối", "không khẳng định", "kiểm tra"),
         ),
         (
             "Mình phân vân Huế với Hạ Long, mục tiêu chính là văn hóa. Chọn phương án nào?",

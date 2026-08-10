@@ -8,3 +8,4 @@
 *.gif binary
 *.ico binary
 services/ai-service/artifacts/travelmate-qwen3-4b-lora-v10-reasoning-guarded/adapter_model.safetensors filter=lfs diff=lfs merge=lfs -text
+services/ai-service/artifacts/travelmate-qwen3-4b-lora-v12-grounded-conversation-r3/adapter_model.safetensors filter=lfs diff=lfs merge=lfs -text

@@ -64,9 +64,9 @@ def cases() -> list[DemoCase]:
             "state",
             "Thôi, chọn Hà Giang thay cho Đà Nẵng.",
             da_nang,
-            lambda body: contains_all(body["reply"], "Hà Giang", "bao nhiêu ngày")
+            lambda body: contains_all(body["reply"], "Tuyên Quang", "bao nhiêu ngày")
             and contains_none(body["reply"], "10.000.000", "2 người"),
-            "Chọn Hà Giang; bỏ slot chuyến Đà Nẵng.",
+            "Ánh xạ Hà Giang sang Tuyên Quang hiện hành; bỏ slot chuyến Đà Nẵng.",
         ),
         DemoCase(
             "replace_y_with_x",
@@ -99,7 +99,7 @@ def cases() -> list[DemoCase]:
             "state",
             "Nhóm đổi thành 3 người nhé.",
             completed_trip("Đà Lạt"),
-            lambda body: contains_all(body["reply"], "Đà Lạt", "3 ngày", "3 người", "10.000.000"),
+            lambda body: contains_all(body["reply"], "Lâm Đồng", "3 ngày", "3 người", "10.000.000"),
             "Chỉ đổi số người, giữ chuyến hiện tại.",
         ),
         DemoCase(
@@ -115,8 +115,8 @@ def cases() -> list[DemoCase]:
             "state",
             "Vẫn đi Đà Lạt, cho lịch thư thả hơn nhé.",
             completed_trip("Đà Lạt"),
-            lambda body: contains_all(body["reply"], "Đà Lạt", "3 ngày", "2 người", "10.000.000"),
-            "Nhắc lại cùng điểm đến không reset slot.",
+            lambda body: contains_all(body["reply"], "Lâm Đồng", "3 ngày", "2 người", "10.000.000"),
+            "Nhắc lại alias Đà Lạt, giữ slot và trả tên Lâm Đồng hiện hành.",
         ),
         DemoCase(
             "natural_reset",

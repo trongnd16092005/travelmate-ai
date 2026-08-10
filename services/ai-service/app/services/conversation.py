@@ -1,7 +1,7 @@
 import re
 from dataclasses import dataclass, replace
 
-from app.knowledge.destinations import DESTINATIONS, normalize_lookup_key
+from app.knowledge.destinations import find_destination_mentions, normalize_lookup_key
 from app.schemas.chat import ChatRequest
 
 REGIONS = {
@@ -88,12 +88,10 @@ def update_memory(
             detected_region = label
             updates["region"] = label
 
-    destination_matches: list[tuple[int, int, str]] = []
-    for destination in DESTINATIONS:
-        for value in (destination.name, *destination.aliases):
-            key = normalize_lookup_key(value)
-            for match in re.finditer(rf"(?<!\w){re.escape(key)}(?!\w)", normalized):
-                destination_matches.append((match.start(), match.end(), destination.name))
+    destination_matches = [
+        (start, end, destination.name)
+        for start, end, destination in find_destination_mentions(text)
+    ]
     if destination_matches:
         detected_destination = _select_destination(normalized, destination_matches)
         if memory.destination and detected_destination != memory.destination:

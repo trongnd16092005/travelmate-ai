@@ -1,6 +1,6 @@
-# Lịch sử cập nhật TravelMate AI — v1 đến v10
+# Lịch sử cập nhật TravelMate AI — v1 đến v12
 
-Cập nhật gần nhất: 2026-08-08.
+Cập nhật gần nhất: 2026-08-11.
 
 Tài liệu này ghi lại cả ba phần tạo nên một phiên bản AI của TravelMate:
 
@@ -23,7 +23,9 @@ Vì vậy, số điểm của **raw model** không đồng nghĩa với chất l
 | v7 | Tự lập lịch, chia ngân sách, checklist | 420 mẫu | Raw intent 9/16; runtime thực thi đủ ba nhóm; bật local demo |
 | v8 | Chuyển/reset state tổng quát | 560 hội thoại | Raw transition 11/20; runtime regression 6/6; bật v8 |
 | v9 | UX hội thoại tự nhiên | 455 hội thoại mới | UX 16/20, transition 17/20, demo 20/20; promote local |
-| v10 | Suy luận có ràng buộc | 525 mẫu mới | Adapter thử nghiệm bị loại; hybrid guarded reasoning 20/20; production hiện tại |
+| v10 | Suy luận có ràng buộc | 525 mẫu mới | Adapter thử nghiệm bị loại; hybrid guarded reasoning 20/20 |
+| v11 | Grounding toàn quốc | 952 mẫu mới | Structured 34/34; alias/free text 22/34; giữ làm candidate, chưa thay v10 |
+| v12 | Hội thoại grounded | 888 mẫu mới | R3 grounded 102/102, structured 34/34, demo 20/20; production hiện tại |
 
 ## v1 — Nền tảng dữ liệu và pipeline QLoRA
 
@@ -241,15 +243,102 @@ Fine-tune chuyên biệt không đạt cổng phát hành. Không adapter v10 th
 - Production dùng đường dẫn `artifacts/travelmate-qwen3-4b-lora-v10-reasoning-guarded`, nhưng nguồn trọng số vẫn là v9; năng lực mới đến từ policy v10.
 - API/UI báo `provider=local`, `modelVersion=v10`.
 
+## v11 — Grounding toàn quốc
+
+### Cập nhật
+
+- Catalog theo 34 đơn vị hành chính cấp tỉnh hiện hành từ 01/07/2025; tên tỉnh,
+  thành trước sắp xếp được giữ làm alias đầu vào.
+- Thêm 952 mẫu cân bằng, đúng 28 mẫu cho mỗi tỉnh/thành: 748 lịch trình JSON
+  grounded và 204 hội thoại nhận diện/gợi ý.
+- Train gồm 748 mẫu mới + 700 replay v10; validation gồm 102 mẫu mới + 120
+  replay. Các prompt held-out cũ và 68 ca nationwide smoke/alias không xuất hiện
+  trong train.
+- Runtime dùng whitelist `placeId` cho cả mã v11 và mã cũ tương thích ngược.
+
+### Kết quả
+
+- Train loss `0,4980`; validation loss `0,4168`; token accuracy trong epoch
+  `91,67%`.
+- Nationwide structured smoke đạt `34/34`: JSON đúng schema và mọi `placeId`
+  đều thuộc whitelist của đúng tỉnh/thành.
+- Nationwide alias/free-text chỉ đạt `22/34` (`64,71%`). Model còn bỏ sót tên
+  tỉnh hiện hành hoặc sinh tên điểm không có trong catalog ở một số câu trả lời.
+- Backend regression đạt `155 passed`; Ruff sạch.
+
+### Quyết định
+
+- Giữ adapter `travelmate-qwen3-4b-lora-v11-nationwide` làm candidate nghiên
+  cứu cho luồng itinerary có validator.
+- Chưa promote làm mặc định và chưa thay production v10. Hội thoại tự do vẫn
+  phải đi qua catalog/guardrail; cần một vòng sửa dữ liệu và chạy lại toàn bộ
+  regression cũ trước khi phát hành.
+- Runtime sau đánh giá v11 đã chuyển gợi ý địa điểm/ẩm thực sang grounded
+  conversation: nhận diện alias → truy xuất catalog → renderer/LLM → validator.
+  Retrieval thời tiết đã dùng Open-Meteo với nguồn, thời điểm truy xuất,
+  timeout/cache và fail-closed. RAG cho giá, giờ mở cửa và tình trạng dịch vụ
+  vẫn chờ nguồn có quyền sử dụng, chưa được giả lập bằng dữ liệu tĩnh.
+
+## v12 — Hội thoại grounded và ranh giới realtime
+
+### Cập nhật
+
+- Chèn cùng một `[GROUNDED_CATALOG]` dùng ở runtime vào dữ liệu hội thoại.
+- Thêm 888 mẫu mới phủ 34 tỉnh/thành: 272 gợi ý catalog, 170 alias, 374
+  realtime và 72 hard-negative cho các mã từng yếu ở v11.
+- Split phần mới: 684 train, 102 validation, 102 test; không trộn held-out cũ
+  vào train.
+- Early canary của lượt đầu phát hiện bịa giá/giờ dù validation loss thấp. R2
+  vì vậy tiếp tục bằng curriculum grounded riêng thay vì chấp nhận metric loss.
+
+### Kết quả
+
+- R2 train loss `0,1521`; validation loss `0,02869`; validation token accuracy
+  `99,27%`.
+- Current province `102/102`; đủ ba catalog places `100/102`; realtime
+  boundary `101/102`; strict template `89/102`.
+- 11/13 ca strict lệch chỉ khác thứ tự/dấu câu/cách diễn đạt nhưng vẫn đúng
+  nội dung. Hai lỗi nội dung thật: Quảng Ngãi thiếu `chứng tích Sơn Mỹ`; An
+  Giang sinh điểm ngoài catalog thay cho `Hà Tiên`.
+- Nationwide structured smoke của r2 giữ `34/34` itinerary đúng schema và
+  whitelist.
+- Runtime/unit regression `207 passed`; Ruff sạch.
+
+R3 tiếp tục từ r2 trên cùng 684 mẫu grounded với learning rate `5e-6` để sửa
+hai lỗi nội dung mà không thay đổi phạm vi dữ liệu.
+
+- Train loss `0,006539`; validation loss `0,01532`; validation token accuracy
+  `99,76%`.
+- Current province, đủ ba catalog places và realtime boundary đều `102/102`.
+- Strict template `96/102`; sáu ca lệch chỉ khác cách diễn đạt, không sai
+  grounding hay ranh giới realtime.
+- Nationwide structured smoke giữ `34/34`; demo runtime đạt `20/20`.
+- Runtime/unit regression sau mở rộng runtime `216 passed`; Ruff sạch.
+
+### Quyết định
+
+- Promote `travelmate-qwen3-4b-lora-v12-grounded-conversation-r3` thành adapter
+  production sau khi các cổng nội dung, structured và runtime đều đạt.
+- Runtime renderer, validator và itinerary whitelist vẫn là lớp bảo vệ bắt
+  buộc; việc promote adapter không loại bỏ các guardrail này.
+- Sau promotion, catalog runtime mở rộng từ ba lên sáu địa điểm cho 12 trung
+  tâm/điểm nóng du lịch. Catalog train/held-out v12 vẫn đóng băng ở ba địa điểm;
+  đây là mở rộng retrieval/runtime, không phải một lượt fine-tune mới.
+- Runtime hỏi lại input lỗi dạng chữ-số dính liền và chặn tất định câu hỏi giá
+  vé/giờ hoạt động khi chưa có nguồn realtime.
+- Phản hồi thời tiết được rút gọn cho UX: chỉ trả dữ liệu dự báo và cảnh báo biến
+  động, không hiển thị tên/URL nguồn hay thời điểm truy xuất. Metadata provider
+  vẫn tồn tại nội bộ để kiểm thử, cache và truy vết lỗi.
+
 ## Trạng thái hiện tại
 
 - Provider mặc định: **Qwen local**.
-- Phiên bản hiển thị: **v10**.
-- Adapter production: `artifacts/travelmate-qwen3-4b-lora-v10-reasoning-guarded`.
-- Kiến trúc: **LoRA v9 đã kiểm chứng + state/grounding/guardrail + guarded reasoning policy v10**.
+- Phiên bản hiển thị: **v12**.
+- Adapter production: `artifacts/travelmate-qwen3-4b-lora-v12-grounded-conversation-r3`.
+- Kiến trúc: **Qwen3-4B LoRA v12-r3 + state/grounding/guardrail + itinerary whitelist**.
 - Các adapter v10 experimental chỉ giữ để phân tích offline, không được promote.
 
-## Nguyên tắc cho v11
+## Nguyên tắc cho phiên bản kế tiếp
 
 - Không promote chỉ dựa vào train loss hoặc validation loss.
 - Bắt buộc chạy lại reasoning, UX, transition, intent, challenge, demo matrix và backend regression.

@@ -78,6 +78,7 @@ def evaluate_structured_records(
     structured_categories = {
         "structured_itinerary_v3",
         "expanded_structured_itinerary_v6",
+        "nationwide_structured_itinerary_v11",
     }
     structured_records = [
         record for record in records if record.get("category") in structured_categories

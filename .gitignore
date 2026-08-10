@@ -41,5 +41,13 @@ checkpoints/
 services/ai-service/artifacts/*
 !services/ai-service/artifacts/travelmate-qwen3-4b-lora-v10-reasoning-guarded/
 !services/ai-service/artifacts/travelmate-qwen3-4b-lora-v10-reasoning-guarded/**
+!services/ai-service/artifacts/travelmate-qwen3-4b-lora-v12-grounded-conversation-r3/
+services/ai-service/artifacts/travelmate-qwen3-4b-lora-v12-grounded-conversation-r3/*
+!services/ai-service/artifacts/travelmate-qwen3-4b-lora-v12-grounded-conversation-r3/README.md
+!services/ai-service/artifacts/travelmate-qwen3-4b-lora-v12-grounded-conversation-r3/adapter_config.json
+!services/ai-service/artifacts/travelmate-qwen3-4b-lora-v12-grounded-conversation-r3/adapter_model.safetensors
+!services/ai-service/artifacts/travelmate-qwen3-4b-lora-v12-grounded-conversation-r3/chat_template.jinja
+!services/ai-service/artifacts/travelmate-qwen3-4b-lora-v12-grounded-conversation-r3/tokenizer.json
+!services/ai-service/artifacts/travelmate-qwen3-4b-lora-v12-grounded-conversation-r3/tokenizer_config.json
 services/ai-service/training/data/processed/
 services/ai-service/training/outputs/

@@ -24,3 +24,10 @@ def test_new_destination_aliases_resolve() -> None:
     assert resolve_destination("đảo Cát Bà").name == "Cát Bà"
     assert resolve_destination("Tra Co").name == "Móng Cái"
     assert resolve_destination("Con Son").name == "Côn Đảo"
+
+
+def test_runtime_catalog_expands_hot_destinations_only() -> None:
+    assert len(resolve_destination("Hà Nội").places) == 6
+    assert len(resolve_destination("Hạ Long").places) == 6
+    assert len(resolve_destination("Đà Nẵng").places) == 6
+    assert len(resolve_destination("Cao Bằng").places) == 3

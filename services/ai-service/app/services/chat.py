@@ -6,12 +6,20 @@ from app.clients.llm.base import ChatMessage, ChatModel
 from app.core.config import settings
 from app.knowledge.destinations import (
     DESTINATIONS,
+    RUNTIME_NATIONWIDE_DESTINATIONS,
     DestinationKnowledge,
+    format_grounded_catalog_context,
+    grounded_place_by_id,
     normalize_lookup_key,
     recommend_destinations,
     resolve_destination,
 )
 from app.prompts.chat import CHAT_SYSTEM_PROMPT
+from app.retrieval.weather import (
+    OpenMeteoWeatherProvider,
+    WeatherProvider,
+    describe_weather_code,
+)
 from app.schemas.chat import ChatRequest, ChatResponse
 from app.services.conversation import (
     ConversationMemory,
@@ -75,10 +83,17 @@ VULNERABLE_TRAVELER_TERMS = (
 
 
 class ChatService:
-    def __init__(self, model: ChatModel, provider: str, model_version: str | None = None) -> None:
+    def __init__(
+        self,
+        model: ChatModel,
+        provider: str,
+        model_version: str | None = None,
+        weather_provider: WeatherProvider | None = None,
+    ) -> None:
         self.model = model
         self.provider = provider
         self.model_version = model_version
+        self.weather_provider = weather_provider
 
     def chat(self, request: ChatRequest) -> ChatResponse:
         if self._is_reset_request(request.message):
@@ -107,6 +122,24 @@ class ChatService:
                 provider=self.provider,
                 modelVersion=self.model_version,
             )
+        clarification_reply = self._input_clarification_reply(request.message)
+        if clarification_reply is not None:
+            return ChatResponse(
+                reply=clarification_reply,
+                is_out_of_scope=False,
+                suggested_questions=self._suggest_questions(memory),
+                provider=self.provider,
+                model_version=self.model_version,
+            )
+        realtime_reply = self._realtime_reply(request.message, memory)
+        if realtime_reply is not None:
+            return ChatResponse(
+                reply=realtime_reply,
+                is_out_of_scope=False,
+                suggested_questions=self._suggest_questions(memory),
+                provider=self.provider,
+                model_version=self.model_version,
+            )
         guided_reply = self._guided_reply(request, memory)
         if guided_reply is not None:
             return ChatResponse(
@@ -130,6 +163,84 @@ class ChatService:
             provider=self.provider,
             model_version=self.model_version,
         )
+
+    def _realtime_reply(
+        self,
+        message: str,
+        memory: ConversationMemory,
+    ) -> str | None:
+        normalized = normalize_lookup_key(message)
+        operating_info_intent = any(
+            term in normalized
+            for term in (
+                "gio hoat dong",
+                "gio mo cua",
+                "mo cua luc",
+                "may gio mo cua",
+                "gia ve",
+                "ve bao nhieu",
+                "phi tham quan",
+            )
+        )
+        if operating_info_intent:
+            destination = self._target_destination(memory)
+            target = destination.name if destination else "địa điểm này"
+            return (
+                f"Mình chưa có nguồn realtime đã xác minh cho giá vé hoặc giờ hoạt động tại "
+                f"{target}, nên không tự đưa ra con số hay khung giờ. Bạn hãy kiểm tra website, "
+                "fanpage hoặc thông báo chính thức của từng địa điểm trước khi đi."
+            )
+        weather_intent = any(
+            term in normalized
+            for term in ("thoi tiet", "du bao", "nhiet do", "mua khong", "co mua")
+        )
+        if not weather_intent:
+            return None
+        destination = self._target_destination(memory)
+        if destination is None:
+            return "Bạn muốn kiểm tra thời tiết cho tỉnh/thành hoặc điểm đến nào?"
+        if self.weather_provider is None:
+            return (
+                f"Mình chưa kết nối được nguồn thời tiết hiện tại cho {destination.name}, nên "
+                "không khẳng định trời mưa hay nắng. Hãy kiểm tra dự báo chính thức trước khi "
+                "chốt lịch hoặc thực hiện hoạt động ngoài trời."
+            )
+        snapshot = self.weather_provider.get_current(destination.name)
+        if snapshot is None:
+            return (
+                f"Nguồn realtime hiện không trả được dữ liệu cho {destination.name}. Mình sẽ "
+                "không dùng dữ liệu cũ hoặc tự đoán; bạn hãy thử lại sau và kiểm tra cảnh báo "
+                "chính thức trước khi đi."
+            )
+        probability = ""
+        if snapshot.daily_precipitation_probability_max is not None:
+            probability = (
+                " Xác suất mưa cao nhất trong ngày theo mô hình là "
+                f"{snapshot.daily_precipitation_probability_max}%."
+            )
+        return (
+            f"Dự báo hiện tại cho {destination.name} lúc {snapshot.observed_at}: "
+            f"{describe_weather_code(snapshot.weather_code)}, "
+            f"{snapshot.temperature_c:g}°C (cảm giác {snapshot.apparent_temperature_c:g}°C), "
+            f"lượng mưa {snapshot.precipitation_mm:g} mm và gió "
+            f"{snapshot.wind_speed_kmh:g} km/h.{probability} "
+            "Thông tin có thể thay đổi; hãy ưu tiên cảnh báo chính thức tại địa phương."
+        )
+
+    @staticmethod
+    def _input_clarification_reply(message: str) -> str | None:
+        normalized = normalize_lookup_key(message)
+        compact_tokens = normalized.split()
+        has_mixed_token = any(
+            re.search(r"[a-z]\d|\d[a-z]", token) for token in compact_tokens
+        )
+        if has_mixed_token and len(normalized) <= 30:
+            return (
+                f"Mình chưa hiểu rõ “{message.strip()}”. Nếu bạn đang nhập số người hoặc số "
+                "ngày, hãy viết rõ như “2 người” hoặc “3 ngày”; nếu không, bạn hãy diễn đạt "
+                "lại yêu cầu bằng một câu ngắn."
+            )
+        return None
 
     @staticmethod
     def _is_reset_request(message: str) -> bool:
@@ -256,8 +367,27 @@ class ChatService:
         if destination is None:
             return None
         normalized_reply = normalize_lookup_key(reply)
-        for candidate in DESTINATIONS:
-            if candidate.id == destination.id:
+        allowed_places = tuple(grounded_place_by_id(destination).values())
+        suggests_a_place = any(
+            marker in normalized_reply
+            for marker in (
+                "hay ghe",
+                "co the ghe",
+                "nen ghe",
+                "tham quan",
+                "check in",
+                "diem den",
+            )
+        )
+        mentions_allowed_place = any(
+            cls._contains_phrase(normalized_reply, normalize_lookup_key(place.name))
+            for place in allowed_places
+        )
+        if suggests_a_place and not mentions_allowed_place:
+            return cls._grounded_recommendation_reply(memory, include_food=False)
+        for candidate in (*RUNTIME_NATIONWIDE_DESTINATIONS, *DESTINATIONS):
+            canonical_candidate = resolve_destination(candidate.name) or candidate
+            if canonical_candidate.name == destination.name:
                 continue
             if cls._mentions_destination(normalized_reply, candidate):
                 continue
@@ -360,6 +490,38 @@ class ChatService:
         memory: ConversationMemory,
     ) -> str | None:
         normalized = normalize_lookup_key(request.message)
+        supplied = update_memory(ConversationMemory(), request.message)
+        destination_selection = (
+            supplied.destination is not None
+            and len(normalized.split()) <= 8
+            and not any(
+                marker in normalized
+                for marker in ("thay cho", "thay vi", " bang ", " sang ", " qua ", "doi ", "chuyen ")
+            )
+            and (
+                normalized.startswith(("di ", "chon ", "chot ", "toi chon "))
+                or normalized == normalize_lookup_key(supplied.destination)
+            )
+        )
+        if destination_selection:
+            destination = cls._target_destination(memory)
+            choice = re.sub(
+                r"^(?:tôi\s+)?(?:đi|chọn|chốt)\s+",
+                "",
+                request.message.strip(),
+                flags=re.IGNORECASE,
+            ).strip()
+            if (
+                destination is not None
+                and choice
+                and normalize_lookup_key(choice) != normalize_lookup_key(destination.name)
+                and memory.duration_days is None
+            ):
+                return (
+                    f"Mình đã ghi nhận {choice} thuộc {destination.name}. "
+                    "Bạn dự định đi bao nhiêu ngày?"
+                )
+            return cls._progress_reply(memory)
         reasoning_reply = cls._reasoning_reply(normalized, memory)
         if reasoning_reply is not None:
             return reasoning_reply
@@ -407,6 +569,34 @@ class ChatService:
         if intent_replies:
             return "\n\n".join(intent_replies)
         recommendation_intent = "goi y" in normalized or "nen di dau" in normalized
+        grounded_place_intent = recommendation_intent or any(
+            term in normalized
+            for term in (
+                "diem tham quan",
+                "tham quan gi",
+                "cho nao",
+                "ba diem",
+                "3 diem",
+                "an gi",
+                "mon ngon",
+                "dac san",
+                "am thuc",
+            )
+        )
+        if grounded_place_intent and memory.destination:
+            requested_place_limit = (
+                3
+                if any(term in normalized for term in ("ba diem", "3 diem"))
+                else None
+            )
+            return cls._grounded_recommendation_reply(
+                memory,
+                include_food=any(
+                    term in normalized
+                    for term in ("an gi", "mon ngon", "dac san", "am thuc")
+                ),
+                limit=requested_place_limit,
+            )
         planning_intent = any(
             term in normalized
             for term in (
@@ -439,7 +629,6 @@ class ChatService:
                     "văn hóa hay thiên nhiên để mình gợi ý điểm đến phù hợp?"
                 )
 
-        supplied = update_memory(ConversationMemory(), request.message)
         supplied_slot = any(
             value is not None
             for value in (
@@ -483,6 +672,34 @@ class ChatService:
         if supplied_slot and len(normalized.split()) <= 24 and not explicit_intent:
             return cls._progress_reply(memory)
         return None
+
+    @classmethod
+    def _grounded_recommendation_reply(
+        cls,
+        memory: ConversationMemory,
+        *,
+        include_food: bool,
+        limit: int | None = None,
+    ) -> str:
+        destination = cls._target_destination(memory)
+        if destination is None:
+            return (
+                f"TravelMate chưa có catalog được kiểm chứng cho {memory.destination}. "
+                "Mình sẽ không tự tạo tên địa điểm; bạn hãy chọn một tỉnh/thành đang được hỗ trợ."
+            )
+        selected_places = destination.places[:limit] if limit is not None else destination.places
+        places = ", ".join(place.name for place in selected_places)
+        count_label = "ba" if len(selected_places) == 3 else str(len(selected_places))
+        parts = [
+            (
+                f"Mình đã đối chiếu catalog TravelMate cho {destination.name}: "
+                f"{count_label} điểm có thể cân nhắc là {places}."
+            )
+        ]
+        if include_food:
+            foods = ", ".join(destination.foods[:3])
+            parts.append(f"Các món trong catalog gồm {foods}.")
+        return " ".join(parts)
 
     @classmethod
     def _reasoning_reply(
@@ -753,12 +970,21 @@ class ChatService:
 
     def build_messages(self, request: ChatRequest) -> list[ChatMessage]:
         messages: list[ChatMessage] = [{"role": "system", "content": CHAT_SYSTEM_PROMPT}]
-        memory_text = format_conversation_memory(build_conversation_memory(request))
+        memory = build_conversation_memory(request)
+        memory_text = format_conversation_memory(memory)
         if memory_text:
             messages.append(
                 {
                     "role": "system",
                     "content": memory_text,
+                }
+            )
+        destination = self._target_destination(memory)
+        if destination is not None:
+            messages.append(
+                {
+                    "role": "system",
+                    "content": format_grounded_catalog_context(destination),
                 }
             )
         messages.extend(message.model_dump() for message in request.history[-8:])
@@ -789,4 +1015,17 @@ class ChatService:
 @lru_cache
 def get_chat_service() -> ChatService:
     model_version = settings.local_model_version if settings.llm_provider == "local" else None
-    return ChatService(create_chat_model(settings), settings.llm_provider, model_version)
+    weather_provider = (
+        OpenMeteoWeatherProvider(
+            timeout_seconds=settings.realtime_weather_timeout_seconds,
+            cache_ttl_seconds=settings.realtime_weather_cache_ttl_seconds,
+        )
+        if settings.realtime_weather_enabled
+        else None
+    )
+    return ChatService(
+        create_chat_model(settings),
+        settings.llm_provider,
+        model_version,
+        weather_provider,
+    )

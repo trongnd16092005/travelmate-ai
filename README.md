@@ -27,6 +27,8 @@ apps/mobile → services/core-api → services/ai-service → LLM provider
 
 Ứng dụng mobile chỉ gọi `core-api`. API chính chịu trách nhiệm xác thực, phân
 quyền, truy cập cơ sở dữ liệu và chuyển ngữ cảnh cần thiết sang `ai-service`.
+Các thay đổi Core API cần thành viên backend review được ghi riêng tại
+[`docs/backend-ai-handoff.md`](docs/backend-ai-handoff.md).
 
 ## Bắt đầu nhanh
 
@@ -70,9 +72,14 @@ uvicorn app.main:app --reload
 ```
 
 Adapter production đã fine-tune được lưu bằng Git LFS trong
-`services/ai-service/artifacts/travelmate-qwen3-4b-lora-v10-reasoning-guarded`.
+`services/ai-service/artifacts/travelmate-qwen3-4b-lora-v12-grounded-conversation-r3`.
 Thành viên chỉ cần chạy inference, không cần train lại; xem hướng dẫn đầy đủ tại
 [`services/ai-service/README.md`](services/ai-service/README.md).
+
+Phạm vi demo hiện tại tập trung vào chat du lịch, sinh lịch trình và gợi ý địa
+điểm trên bản đồ. Gợi ý bản đồ dùng catalog TravelMate cùng tọa độ OpenStreetMap;
+không sinh hoặc hiển thị giá vé realtime. Ngân sách tổng và chi phí hoạt động do
+người dùng nhập vẫn được giữ cho chức năng quản lý chuyến đi.
 
 Không commit file `.env` hoặc bất kỳ API key nào lên Git.
 
