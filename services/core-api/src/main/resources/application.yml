@@ -44,7 +44,7 @@ app:
     refresh-token-expiration: 604800000  # 7 ngày (ms)
 
   frontend-url: http://localhost:8081    # React Native Expo dev server
-  ai-service-url: http://localhost:8000  # FastAPI AI Service
+  ai-service-url: ${APP_AI_SERVICE_URL:http://127.0.0.1:8000/internal/v1/ai}
 
   # Rate limiting (request tối đa mỗi phút)
   rate-limit:

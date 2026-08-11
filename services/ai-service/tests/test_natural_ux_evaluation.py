@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from training.evaluate_natural_ux import (
     asks_for_destination,
     evaluate_ux_records,
@@ -8,8 +10,15 @@ from training.evaluate_natural_ux import (
 from training.validate_dataset import load_and_validate
 
 
+def require_dataset(path: str) -> Path:
+    dataset = Path(path)
+    if not dataset.is_file():
+        pytest.skip(f"Generated evaluation dataset is absent: {dataset}")
+    return dataset
+
+
 def test_reference_responses_pass_natural_ux_evaluation() -> None:
-    dataset = Path("training/data/processed/ux_v9/ux_test.jsonl")
+    dataset = require_dataset("training/data/processed/ux_v9/ux_test.jsonl")
     records, errors = load_and_validate(dataset, require_metadata=True)
     assert errors == []
     predictions = {record["id"]: record["messages"][-1]["content"] for record in records}
@@ -22,7 +31,7 @@ def test_reference_responses_pass_natural_ux_evaluation() -> None:
 
 
 def test_empty_predictions_fail_all_natural_ux_cases() -> None:
-    dataset = Path("training/data/processed/ux_v9/ux_test.jsonl")
+    dataset = require_dataset("training/data/processed/ux_v9/ux_test.jsonl")
     records, errors = load_and_validate(dataset, require_metadata=True)
     assert errors == []
 

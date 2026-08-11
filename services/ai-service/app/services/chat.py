@@ -1014,7 +1014,12 @@ class ChatService:
 
 @lru_cache
 def get_chat_service() -> ChatService:
-    model_version = settings.local_model_version if settings.llm_provider == "local" else None
+    if settings.llm_provider == "local":
+        model_version = settings.local_model_version
+    elif settings.llm_provider == "groq":
+        model_version = settings.groq_model
+    else:
+        model_version = None
     weather_provider = (
         OpenMeteoWeatherProvider(
             timeout_seconds=settings.realtime_weather_timeout_seconds,

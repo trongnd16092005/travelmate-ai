@@ -1,8 +1,7 @@
 # Backend handoff cho phần AI
 
-Tài liệu này ghi riêng những thay đổi nằm ngoài phạm vi AI Service để thành viên
-backend review và tự đưa vào nhánh backend. Người phụ trách AI không cần nhận
-ownership các file Java bên dưới.
+Tài liệu này là contract đã được áp dụng trên nhánh tích hợp AI v12. Core API,
+AI Service và mobile phải được merge cùng nhau để tránh quay lại payload cũ.
 
 ## Contract Core API → AI Service
 
@@ -71,7 +70,7 @@ Nếu `placeName` trùng một bản ghi Place, backend có thể gắn quan h�
 Nếu không tìm thấy thì vẫn phải lưu `title`; không được đổi tên hoạt động thành
 `OTHER`. AI không trả giá vé hoặc chi phí ước tính cho từng địa điểm.
 
-Các file backend đang có thay đổi phục vụ contract này:
+Các file backend đã áp dụng contract này:
 
 - `services/core-api/src/main/java/com/travelmate/domain/ai/service/AIProxyService.java`
 - `services/core-api/src/main/java/com/travelmate/domain/place/repository/PlaceRepository.java`
@@ -110,7 +109,7 @@ giá trị mặc định:
 }
 ```
 
-`AIProxyService.chat` hiện đã đọc `isOutOfScope` và `suggestedQuestions` từ
+`AIProxyService.chat` đọc `isOutOfScope` và `suggestedQuestions` từ
 FastAPI rồi trả lại cho mobile. Khi AI Service không gửi hai trường này,
 backend vẫn fallback an toàn về `false` và danh sách rỗng.
 
@@ -135,15 +134,15 @@ Request Core API nhận và chuyển tiếp:
 Response chứa địa điểm từ catalog cùng `latitude`, `longitude`, `address`,
 `mapUrl` và `source`. Response không có `estimatedCostVnd`.
 
-Các file backend đang có thay đổi phục vụ contract này:
+Các file backend đã áp dụng contract này:
 
 - `services/core-api/src/main/java/com/travelmate/domain/ai/dto/SuggestPlacesRequest.java`
 - `services/core-api/src/main/java/com/travelmate/domain/ai/service/AIProxyService.java`
 
-## 4. Route backend đang đề nghị bỏ
+## 4. Route backend đã bỏ
 
 `POST /api/v1/ai/optimize-itinerary/{tripId}` đang proxy đến một endpoint không
-tồn tại trong AI Service và hiện không được mobile gọi. Thay đổi hiện tại đã bỏ
+tồn tại trong AI Service và hiện không được mobile gọi. Nhánh tích hợp đã bỏ
 route khỏi:
 
 - `services/core-api/src/main/java/com/travelmate/domain/ai/controller/AIController.java`
@@ -154,9 +153,9 @@ vi demo hiện tại khi chưa có implementation phía AI.
 
 ## 5. Kiểm tra dành cho backend
 
-Đã xác nhận `mvnw.cmd clean test` compile thành công. Repository Core API hiện
-không có Java test source, vì vậy backend nên bổ sung tối thiểu test cho ba
-contract trên trước khi merge.
+Đã xác nhận `mvnw.cmd test` thành công. `AIProxyServiceContractTest` kiểm tra cả
+ba contract: path và camelCase payload, `plan.days`/mapping activity, trip
+context và metadata chat.
 
 Không cần migration để bỏ `priceRange` hoặc `openingHours`. Các cột cũ nên được
 giữ để tương thích database; chỉ không dùng chúng trong luồng AI hiện tại.

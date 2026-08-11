@@ -72,4 +72,4 @@ class ItineraryResponse(ApiModel):
     missing_fields: list[MissingItineraryField] = Field(default_factory=list)
     questions: list[str] = Field(default_factory=list, max_length=4)
     plan: ItineraryPlan | None = None
-    provider: Literal["mock", "gemini", "local"] | None = None
+    provider: Literal["mock", "gemini", "groq", "local"] | None = None

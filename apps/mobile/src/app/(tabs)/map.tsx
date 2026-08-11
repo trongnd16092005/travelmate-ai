@@ -94,8 +94,6 @@ export default function MapScreen() {
         body: JSON.stringify({
           city: activeTrip.destination,
           type: null,
-          budget: activeTrip.budget,
-          tripId: activeTrip.id,
           specialNote: note || `Địa điểm nổi bật phù hợp ngày ${selectedDay} của hành trình, tối ưu di chuyển`,
           count: 6,
         }),

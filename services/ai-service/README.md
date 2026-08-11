@@ -1,7 +1,7 @@
 # TravelMate AI Service
 
 Dịch vụ FastAPI phụ trách chatbot và các tính năng AI. Chatbot hỗ trợ `mock`
-để kiểm tra tích hợp, `gemini` để demo qua Gemini API và `local` để chạy
+để kiểm tra tích hợp, `gemini` hoặc `groq` để chạy qua API, và `local` để chạy
 Qwen3-4B cùng LoRA adapter đã fine-tune.
 
 ## Chạy thành quả đã train (không cần train lại)
@@ -55,22 +55,22 @@ uvicorn app.main:app --reload --port 8000
 ```
 
 Kiểm tra `http://localhost:8000/internal/v1/health` và Swagger UI tại
-`http://localhost:8000/docs`. Mobile/Expo Web trỏ tới:
+`http://localhost:8000/docs`. Core API trỏ tới AI Service bằng:
 
 ```dotenv
-EXPO_PUBLIC_AI_SERVICE_URL=http://localhost:8000/internal/v1
+APP_AI_SERVICE_URL=http://127.0.0.1:8000/internal/v1/ai
 ```
 
-Nếu chạy mobile trên điện thoại thật, thay `localhost` bằng IP LAN của máy
-chạy AI Service. Nếu máy không đủ tài nguyên để nạp Qwen3-4B, giữ
-`LLM_PROVIDER=mock` để làm giao diện hoặc dùng URL của một AI Service đã được
-deploy; không cần và cũng không nên train lại trên máy UX/UI.
+Mobile chỉ gọi Core API qua `EXPO_PUBLIC_API_URL`; không cần giữ API key hoặc
+gọi trực tiếp AI Service. Nếu máy không đủ tài nguyên để nạp Qwen3-4B, dùng
+`LLM_PROVIDER=groq`/`gemini`, giữ `mock` để kiểm tra giao diện, hoặc dùng một AI
+Service đã deploy; không cần và cũng không nên train lại trên máy UX/UI.
 
 Có thể xác minh file tải về bằng SHA-256:
 
 | File | SHA-256 |
 |---|---|
-| `adapter_model.safetensors` | `5CCFA8B8372EF1756806D198F610B8A28CD5DB6DB790A715DC666DE692E8975B` |
+| `adapter_model.safetensors` | `C9295E454A28ABC71875EECD00A73A60B92C3B9506DA2350AA1E6E0E7C2B45AC` |
 | `tokenizer.json` | `BE75606093DB2094D7CD20F3C2F385C212750648BD6EA4FB2BF507A6A4C55506` |
 
 ## Thiết lập local
@@ -195,6 +195,21 @@ GEMINI_API_KEY=your-api-key
 Không đưa file `.env` hoặc API key vào Git. Khởi động lại FastAPI sau khi đổi
 cấu hình. Model mặc định là `gemini-3.6-flash`; có thể đổi bằng
 `GEMINI_MODEL`.
+
+## Chạy bằng Groq
+
+Groq là phương án chạy API nhẹ khi máy không đủ VRAM cho Qwen3-4B local. Sao
+chép file cấu hình rồi đặt provider và key trong `.env`:
+
+```dotenv
+LLM_PROVIDER=groq
+GROQ_API_KEY=your-api-key
+GROQ_MODEL=llama-3.3-70b-versatile
+```
+
+Key chỉ nằm trong `services/ai-service/.env` và không được đưa vào Git hoặc
+mobile bundle. Runtime vẫn giữ catalog, guardrail địa danh và retrieval thời
+tiết của TravelMate trước/sau lời gọi model.
 
 ## Chạy adapter khác để nghiên cứu
 

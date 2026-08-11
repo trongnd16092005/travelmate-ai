@@ -1,11 +1,20 @@
 from pathlib import Path
 
+import pytest
+
 from training.evaluate_reasoning import evaluate_reasoning_records, reasoning_errors
 from training.validate_dataset import load_and_validate
 
 
+def require_dataset(path: str) -> Path:
+    dataset = Path(path)
+    if not dataset.is_file():
+        pytest.skip(f"Generated evaluation dataset is absent: {dataset}")
+    return dataset
+
+
 def test_reference_responses_pass_reasoning_evaluation() -> None:
-    dataset = Path("training/data/processed/reasoning_v10/reasoning_test.jsonl")
+    dataset = require_dataset("training/data/processed/reasoning_v10/reasoning_test.jsonl")
     records, errors = load_and_validate(dataset, require_metadata=True)
     assert errors == []
     predictions = {record["id"]: record["messages"][-1]["content"] for record in records}
@@ -18,7 +27,7 @@ def test_reference_responses_pass_reasoning_evaluation() -> None:
 
 
 def test_empty_predictions_fail_all_reasoning_cases() -> None:
-    dataset = Path("training/data/processed/reasoning_v10/reasoning_test.jsonl")
+    dataset = require_dataset("training/data/processed/reasoning_v10/reasoning_test.jsonl")
     records, errors = load_and_validate(dataset, require_metadata=True)
     assert errors == []
 

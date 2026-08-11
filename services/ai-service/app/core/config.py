@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     cors_origins: str = (
         "http://localhost:8081,http://127.0.0.1:8081,http://localhost:19006,http://127.0.0.1:19006"
     )
-    llm_provider: Literal["mock", "gemini", "local"] = "mock"
+    llm_provider: Literal["mock", "gemini", "groq", "local"] = "mock"
     local_model_id: str = "Qwen/Qwen3-4B"
     local_adapter_path: str = "artifacts/travelmate-qwen3-4b-lora-v12-grounded-conversation-r3"
     local_model_device: str = "auto"
@@ -24,6 +24,13 @@ class Settings(BaseSettings):
     gemini_model: str = "gemini-3.6-flash"
     gemini_temperature: float = 0.4
     gemini_max_output_tokens: int = 1536
+    groq_api_key: str = ""
+    groq_base_url: str = "https://api.groq.com/openai/v1"
+    groq_model: str = "llama-3.3-70b-versatile"
+    groq_temperature: float = 0.2
+    groq_max_output_tokens: int = 1536
+    groq_timeout_seconds: float = 20.0
+    groq_max_retries: int = 2
     openai_api_key: str = ""
     realtime_weather_enabled: bool = True
     realtime_weather_timeout_seconds: float = 5.0

@@ -18,3 +18,7 @@ class LocalModelUnavailableError(ChatModelUnavailableError):
 
 class GeminiModelUnavailableError(ChatModelUnavailableError):
     """Raised when Gemini is not configured or its API request fails."""
+
+
+class GroqModelUnavailableError(ChatModelUnavailableError):
+    """Raised when Groq is not configured or its API request fails."""

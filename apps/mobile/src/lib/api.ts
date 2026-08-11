@@ -131,7 +131,7 @@ export type PlaceSuggestionResponse = {
   city: string;
   suggestions: PlaceSuggestion[];
   message: string;
-  provider: 'mock' | 'gemini' | 'local';
+  provider: 'mock' | 'gemini' | 'groq' | 'local' | 'catalog';
 };
 
 export type ChatResponse = {

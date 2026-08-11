@@ -51,14 +51,6 @@ public class AIController {
         return ResponseEntity.ok(ApiResponse.success(result));
     }
 
-    @PostMapping("/optimize-itinerary/{tripId}")
-    @Operation(summary = "AI tối ưu lịch trình")
-    public ResponseEntity<ApiResponse<Object>> optimizeItinerary(@PathVariable Long tripId) {
-        var user = securityUtils.getCurrentUser();
-        String result = aiProxyService.optimizeItinerary(user, tripId);
-        return ResponseEntity.ok(ApiResponse.success(result));
-    }
-
     @GetMapping("/conversations")
     @Operation(summary = "Danh sách cuộc hội thoại")
     public ResponseEntity<ApiResponse<List<ConversationResponse>>> getConversations(
