@@ -13,6 +13,7 @@ import com.travelmate.security.JwtProperties;
 import com.travelmate.security.JwtService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -35,6 +36,9 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final EmailService emailService;
 
+    @Value("${app.auth.require-email-verification:true}")
+    private boolean requireEmailVerification;
+
     // ─── REGISTER ───────────────────────────────────────────────
     public String register(RegisterRequest request) {
         // Validate confirm password
@@ -52,14 +56,18 @@ public class AuthService {
                 .fullName(request.fullName())
                 .email(request.email().toLowerCase())
                 .passwordHash(passwordEncoder.encode(request.password()))
-                .status(AccountStatus.PENDING)
+                .status(requireEmailVerification ? AccountStatus.PENDING : AccountStatus.ACTIVE)
+                .emailVerifiedAt(requireEmailVerification ? null : LocalDateTime.now())
                 .build();
         userRepository.save(user);
 
-        // Send verification email (async)
-        sendVerificationEmail(user);
+        if (requireEmailVerification) {
+            sendVerificationEmail(user);
+        }
 
-        return "Đăng ký thành công. Vui lòng kiểm tra email để xác minh tài khoản.";
+        return requireEmailVerification
+                ? "Đăng ký thành công. Vui lòng kiểm tra email để xác minh tài khoản."
+                : "Đăng ký thành công. Bạn có thể đăng nhập ngay.";
     }
 
     @Async

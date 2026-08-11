@@ -22,7 +22,7 @@ TravelMate AI là hệ thống hỗ trợ lập kế hoạch và tư vấn du l�
 ```text
 apps/mobile → services/core-api → services/ai-service → LLM provider
                         ↓
-                      MySQL
+                      SQLite
 ```
 
 Ứng dụng mobile chỉ gọi `core-api`. API chính chịu trách nhiệm xác thực, phân

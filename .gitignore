@@ -32,6 +32,8 @@ __pycache__/
 *.log
 logs/
 tmp/
+services/core-api/data/*
+!services/core-api/data/.gitkeep
 
 # Local AI models and training outputs
 artifacts/

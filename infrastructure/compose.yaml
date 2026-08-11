@@ -1,23 +1,6 @@
 name: travelmate
 
 services:
-  mysql:
-    image: mysql:8.4
-    environment:
-      MYSQL_DATABASE: ${MYSQL_DATABASE:-travelmate}
-      MYSQL_USER: ${MYSQL_USER:-travelmate}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-travelmate}
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-travelmate-root}
-    ports:
-      - "3306:3306"
-    volumes:
-      - mysql-data:/var/lib/mysql
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-
   ai-service:
     build:
       context: ../services/ai-service
@@ -27,7 +10,8 @@ services:
       LLM_PROVIDER: ${LLM_PROVIDER:-mock}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.6-flash}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      GROQ_MODEL: ${GROQ_MODEL:-llama-3.3-70b-versatile}
     ports:
       - "8000:8000"
 
@@ -35,17 +19,16 @@ services:
     build:
       context: ../services/core-api
     environment:
-      DB_URL: jdbc:mysql://mysql:3306/${MYSQL_DATABASE:-travelmate}?useSSL=false&allowPublicKeyRetrieval=true
-      DB_USERNAME: ${MYSQL_USER:-travelmate}
-      DB_PASSWORD: ${MYSQL_PASSWORD:-travelmate}
-      AI_SERVICE_URL: http://ai-service:8000
+      SPRING_DATASOURCE_URL: jdbc:sqlite:/app/data/travelmate.db
+      APP_AI_SERVICE_URL: http://ai-service:8000/internal/v1/ai
+      APP_AUTH_REQUIRE_EMAIL_VERIFICATION: ${APP_AUTH_REQUIRE_EMAIL_VERIFICATION:-false}
     ports:
       - "8080:8080"
+    volumes:
+      - core-data:/app/data
     depends_on:
-      mysql:
-        condition: service_healthy
       ai-service:
         condition: service_started
 
 volumes:
-  mysql-data:
+  core-data:

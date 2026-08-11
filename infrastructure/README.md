@@ -1,7 +1,8 @@
 # Infrastructure
 
-Cấu hình chạy MySQL, Core API và AI Service bằng Docker Compose. Ứng dụng
-mobile chạy bằng Expo trên máy phát triển và kết nối tới Core API.
+Cấu hình chạy Core API và AI Service bằng Docker Compose. Core API lưu dữ liệu bền vững
+trong SQLite volume `core-data`; ứng dụng mobile chạy bằng Expo trên máy phát triển và chỉ
+kết nối tới Core API.
 
 ## Khởi động
 
@@ -14,6 +15,10 @@ docker compose --env-file .env -f infrastructure/compose.yaml up --build
 
 Các địa chỉ mặc định:
 
-- Core API: `http://localhost:8080/api/v1/health`
+- Core Swagger: `http://localhost:8080/swagger-ui.html`
+- Core health: `http://localhost:8080/actuator/health`
 - AI Swagger: `http://localhost:8000/docs`
-- MySQL: `localhost:3306`
+- AI health: `http://localhost:8000/internal/v1/health`
+
+SQLite nằm tại `/app/data/travelmate.db` trong container và được gắn với Docker volume
+`core-data`, vì vậy dữ liệu không mất khi container được tạo lại.
