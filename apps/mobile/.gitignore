@@ -6,6 +6,8 @@ node_modules/
 # Expo
 .expo/
 dist/
+dist-android/
+dist-ios/
 web-build/
 expo-env.d.ts
 
@@ -32,6 +34,7 @@ yarn-error.*
 
 # local env files
 .env*.local
+.env
 
 # typescript
 *.tsbuildinfo
@@ -49,4 +52,3 @@ example
 /assets/images/logo-glow.png
 /assets/images/expo-logo.png
 /assets/images/expo-badge*.png
-/assets/images/favicon.png
