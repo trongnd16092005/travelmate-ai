@@ -10,6 +10,8 @@ import { apiRequest, ChatResponse } from '@/lib/api';
 type Message = { id: string; role: 'assistant' | 'user'; content: string; pending?: boolean };
 
 const defaultPrompts = ['Gợi ý món địa phương', 'Tối ưu ngân sách', 'Lịch trình có quá dày?', 'Chuẩn bị hành lý'];
+const aiServiceUrl = process.env.EXPO_PUBLIC_AI_SERVICE_URL?.replace(/\/$/, '');
+type AiStatus = 'checking' | 'online' | 'offline';
 
 export default function AiScreen() {
   const { user } = useSession();
@@ -20,7 +22,30 @@ export default function AiScreen() {
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const [aiStatus, setAiStatus] = useState<AiStatus>('checking');
   const listRef = useRef<FlatList<Message>>(null);
+
+  useEffect(() => {
+    let active = true;
+    async function checkAiHealth() {
+      if (!aiServiceUrl) {
+        if (active) setAiStatus('offline');
+        return;
+      }
+      try {
+        const response = await fetch(`${aiServiceUrl}/health`);
+        if (active) setAiStatus(response.ok ? 'online' : 'offline');
+      } catch {
+        if (active) setAiStatus('offline');
+      }
+    }
+    checkAiHealth();
+    const timer = setInterval(checkAiHealth, 15_000);
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
+  }, []);
 
   useEffect(() => {
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
@@ -76,7 +101,12 @@ export default function AiScreen() {
         <View style={styles.topbar}>
           <Brand compact />
           <View style={styles.topActions}>
-            <View style={styles.online}><View style={styles.onlineDot} /><Text style={styles.onlineText}>AI online</Text></View>
+            <View style={[styles.online, aiStatus === 'offline' && styles.offline]}>
+              <View style={[styles.onlineDot, aiStatus === 'checking' && styles.checkingDot, aiStatus === 'offline' && styles.offlineDot]} />
+              <Text style={[styles.onlineText, aiStatus === 'offline' && styles.offlineText]}>
+                {aiStatus === 'online' ? 'AI online' : aiStatus === 'checking' ? 'Đang kiểm tra' : 'AI offline'}
+              </Text>
+            </View>
             <Avatar name={user?.fullName} size={38} />
           </View>
         </View>
@@ -156,6 +186,10 @@ const styles = StyleSheet.create({
   online: { height: 32, paddingHorizontal: 11, flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(247,247,244,0.82)', borderRadius: radii.pill },
   onlineDot: { width: 7, height: 7, backgroundColor: palette.forestLight, borderRadius: 4 },
   onlineText: { color: palette.forest, fontSize: 9, fontWeight: '900' },
+  checkingDot: { backgroundColor: palette.muted },
+  offline: { backgroundColor: 'rgba(255,236,232,0.9)' },
+  offlineDot: { backgroundColor: '#C44B3F' },
+  offlineText: { color: '#8E3027' },
   heading: { paddingTop: 3 },
   eyebrow: { color: palette.forest, fontSize: 8, fontWeight: '900', letterSpacing: 1.4 },
   title: { marginTop: 7, color: palette.ink, fontSize: 31, lineHeight: 34, fontWeight: '900', letterSpacing: -1.4 },

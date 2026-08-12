@@ -1,5 +1,5 @@
 import Constants from 'expo-constants';
-import * as SecureStore from 'expo-secure-store';
+import * as SecureStore from '@/lib/secureStorage';
 
 const debuggerHost = Constants.expoConfig?.hostUri?.split(':')[0];
 export const API_URL = (
@@ -119,7 +119,6 @@ export type PlaceSuggestion = {
   description?: string;
   reason?: string;
   address?: string | null;
-  estimatedCostVnd?: number;
   latitude?: number | null;
   longitude?: number | null;
   mapUrl?: string | null;
@@ -130,8 +129,8 @@ export type PlaceSuggestion = {
 export type PlaceSuggestionResponse = {
   city: string;
   suggestions: PlaceSuggestion[];
-  message: string;
-  provider: 'mock' | 'gemini' | 'local';
+  message?: string | null;
+  provider: 'catalog';
 };
 
 export type ChatResponse = {

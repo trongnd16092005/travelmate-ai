@@ -32,17 +32,17 @@ public class Place {
     @Builder.Default
     private String country = "Vietnam";
 
-    @Column(precision = 10, scale = 8)
+    @Column(columnDefinition = "DECIMAL(10,8)")
     private Double latitude;
 
-    @Column(precision = 11, scale = 8)
+    @Column(columnDefinition = "DECIMAL(11,8)")
     private Double longitude;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 30)
     private PlaceType type;
 
-    @Column(precision = 2, scale = 1)
+    @Column(columnDefinition = "DECIMAL(2,1)")
     private Double rating;
 
     @Column(name = "phone_number", length = 20)

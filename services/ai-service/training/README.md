@@ -3,8 +3,18 @@
 Xem [lịch sử cập nhật v1-v12](VERSION_HISTORY.md) để biết mục tiêu, dữ liệu,
 kết quả đánh giá và quyết định phát hành của từng phiên bản.
 
-Pipeline fine-tune `Qwen/Qwen3-4B` bằng QLoRA được chia thành bốn giai đoạn,
-tương ứng với bốn notebook Google Colab:
+Người vận hành muốn chạy từng bước bằng menu tương tác có thể dùng:
+
+```bash
+python -m training.manual_train_runner
+```
+
+Runner hiển thị riêng từng hộp thoại cho validate, dry-run, train GPU, sinh
+prediction, evaluate, regression và demo API. Output mặc định luôn là một
+candidate mới để không ghi đè adapter production.
+
+Pipeline fine-tune `Qwen/Qwen3-4B` bằng QLoRA được chia thành bốn giai đoạn.
+Repo có bốn notebook theo từng giai đoạn và một runbook tổng hợp cho Google Colab:
 
 1. [`TravelMate_01_Data_Prep.ipynb`](notebooks/TravelMate_01_Data_Prep.ipynb):
    kiểm tra và chia dữ liệu.
@@ -14,6 +24,8 @@ tương ứng với bốn notebook Google Colab:
    sinh phản hồi trên tập Test và chấm các hành vi bắt buộc.
 4. [`TravelMate_04_Inference_Demo.ipynb`](notebooks/TravelMate_04_Inference_Demo.ipynb):
    nạp adapter và hỏi thử mô hình.
+5. [`TravelMate_05_Manual_Training_Runbook.ipynb`](notebooks/TravelMate_05_Manual_Training_Runbook.ipynb):
+   chạy toàn bộ quy trình thủ công theo từng ô Colab có form xác nhận.
 
 Bộ `training/data/challenge_v1.jsonl` gồm 20 tình huống viết tay và không được
 đưa vào train. Tập này kiểm tra câu hỏi mới, hội thoại nhiều lượt, giới hạn

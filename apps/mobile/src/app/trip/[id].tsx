@@ -13,6 +13,7 @@ import { useDestinationImage } from '@/hooks/useTravelImage';
 import { Activity, apiRequest, Expense, ExpenseSummary, formatCompactMoney, formatDate, formatMoney, Itinerary, Trip } from '@/lib/api';
 
 const categoryLabels: Record<string, string> = {
+  SIGHTSEEING: 'Tham quan',
   FOOD: 'Ăn uống',
   TRANSPORT: 'Di chuyển',
   ACCOMMODATION: 'Lưu trú',
@@ -22,6 +23,7 @@ const categoryLabels: Record<string, string> = {
 };
 
 const categoryIcons: Record<string, keyof typeof Ionicons.glyphMap> = {
+  SIGHTSEEING: 'camera-outline',
   FOOD: 'restaurant-outline',
   TRANSPORT: 'car-outline',
   ACCOMMODATION: 'bed-outline',
@@ -166,14 +168,14 @@ function ItineraryTab({ itinerary, onGenerate, generating, onToggle }: { itinera
                     <View style={styles.activityTitleRow}>
                       <View style={styles.activityTitleCopy}>
                         <Text style={[styles.activityName, done && styles.activityNameDone]}>{activity.name}</Text>
-                        <Text style={styles.activityPlace}>{activity.place?.name ?? activity.type}</Text>
+                        <Text style={styles.activityPlace}>{activity.place?.name ?? categoryLabels[activity.type] ?? 'Hoạt động'}</Text>
                       </View>
                       <View style={[styles.statusPill, done && styles.statusPillDone]}><Text style={styles.statusPillText}>{done ? 'XONG' : 'SẮP TỚI'}</Text></View>
                       <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={15} color={palette.muted} />
                     </View>
                     <View style={styles.activityMeta}>
                       <Text style={styles.activityMetaText} numberOfLines={1}><Ionicons name="location-outline" size={11} /> {activity.place?.address ?? 'Theo lịch trình'}</Text>
-                      {activity.estimatedCost ? <Text style={styles.activityCost}>{formatCompactMoney(activity.estimatedCost)}</Text> : <Text style={styles.activityCost}>Miễn phí/chưa rõ</Text>}
+                      {activity.estimatedCost ? <Text style={styles.activityCost}>{formatCompactMoney(activity.estimatedCost)}</Text> : <Text style={styles.activityCost}>Chưa có thông tin chi phí</Text>}
                     </View>
                     {expanded && <View style={styles.activityDetails}>
                       <Text style={styles.activityDetailsTitle}>CHI TIẾT ĐIỂM DỪNG</Text>

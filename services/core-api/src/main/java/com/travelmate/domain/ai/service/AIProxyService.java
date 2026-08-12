@@ -14,11 +14,14 @@ import com.travelmate.domain.ai.repository.ChatConversationRepository;
 import com.travelmate.domain.ai.repository.ChatMessageRepository;
 import com.travelmate.domain.itinerary.entity.Activity;
 import com.travelmate.domain.itinerary.entity.ItineraryDay;
+import com.travelmate.common.enums.ActivityType;
 import com.travelmate.domain.itinerary.repository.ActivityRepository;
 import com.travelmate.domain.itinerary.repository.ItineraryDayRepository;
 import com.travelmate.domain.itinerary.service.ItineraryService;
 import com.travelmate.domain.trip.entity.Trip;
 import com.travelmate.domain.trip.service.TripService;
+import com.travelmate.domain.place.repository.PlaceRepository;
+import com.travelmate.domain.place.entity.Place;
 import com.travelmate.domain.user.entity.User;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -30,11 +33,9 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 
-import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
-import java.time.format.DateTimeParseException;
 import java.util.*;
 
 @Slf4j
@@ -48,6 +49,7 @@ public class AIProxyService {
     private final ItineraryService itineraryService;
     private final ItineraryDayRepository dayRepository;
     private final ActivityRepository activityRepository;
+    private final PlaceRepository placeRepository;
     private final ChatConversationRepository conversationRepository;
     private final ChatMessageRepository messageRepository;
     private final AIGenerationLogRepository logRepository;
@@ -70,27 +72,27 @@ public class AIProxyService {
             // Build request payload for FastAPI
             Map<String, Object> payload = new HashMap<>();
             payload.put("destination", trip.getDestination());
-            payload.put("num_days", trip.getDurationDays());
-            payload.put("start_date", trip.getStartDate().toString());
-            payload.put("end_date", trip.getEndDate().toString());
-            payload.put("budget", trip.getBudget() != null ? trip.getBudget().longValue() : 5000000L);
-            payload.put("num_people", trip.getNumPeople());
-            payload.put("travel_style", request.travelStyle() != null ?
-                    request.travelStyle().name() : (trip.getTravelStyle() != null ?
-                    trip.getTravelStyle().name() : "RELAXATION"));
-            payload.put("interests", request.interests() != null ? request.interests() : List.of());
-            payload.put("special_requests", request.specialRequests() != null ?
-                    request.specialRequests() : "");
+            payload.put("durationDays", trip.getDurationDays());
+            payload.put("startDate", trip.getStartDate().toString());
+            payload.put("endDate", trip.getEndDate().toString());
+            payload.put("budgetVnd", trip.getBudget() != null ? trip.getBudget().longValue() : 5000000L);
+            payload.put("numPeople", trip.getNumPeople());
+            List<String> preferences = new ArrayList<>();
+            if (request.travelStyle() != null) preferences.add(request.travelStyle().name());
+            else if (trip.getTravelStyle() != null) preferences.add(trip.getTravelStyle().name());
+            if (request.interests() != null) preferences.addAll(request.interests());
+            payload.put("preferences", preferences);
+            payload.put("notes", request.specialRequests());
 
             // Call AI Service
             String responseJson = webClientBuilder.build()
                     .post()
-                    .uri(aiServiceUrl + "/generate-itinerary")
+                    .uri(aiServiceUrl + "/itineraries/generate")
                     .contentType(MediaType.APPLICATION_JSON)
                     .bodyValue(payload)
                     .retrieve()
                     .bodyToMono(String.class)
-                    .timeout(Duration.ofSeconds(30))
+                    .timeout(Duration.ofSeconds(120))
                     .block();
 
             // Parse and save itinerary
@@ -122,7 +124,7 @@ public class AIProxyService {
     private void saveGeneratedItinerary(Trip trip, String responseJson) {
         try {
             JsonNode root = objectMapper.readTree(responseJson);
-            JsonNode days = root.path("days");
+            JsonNode days = root.path("plan").path("days");
 
             // Regenerate days
             itineraryService.generateDaysForTrip(trip);
@@ -133,7 +135,7 @@ public class AIProxyService {
                 for (int i = 0; i < days.size() && i < itineraryDays.size(); i++) {
                     JsonNode dayNode = days.get(i);
                     ItineraryDay day = itineraryDays.get(i);
-                    day.setNote(dayNode.path("theme").asText(null));
+                    day.setNote(dayNode.path("title").asText(null));
                     dayRepository.save(day);
 
                     JsonNode activities = dayNode.path("activities");
@@ -142,12 +144,13 @@ public class AIProxyService {
                         for (JsonNode actNode : activities) {
                             Activity activity = Activity.builder()
                                     .itineraryDay(day)
-                                    .name(actNode.path("name").asText("Hoạt động"))
-                                    .description(actNode.path("description").asText(null))
-                                    .note(actNode.path("bookingNote").asText(null))
-                                    .estimatedCost(parseDecimal(actNode.path("estimatedCost").asText(null)))
-                                    .startTime(parseTime(actNode.path("startTime").asText(null)))
-                                    .endTime(parseTime(actNode.path("endTime").asText(null)))
+                                    .place(resolvePlace(actNode.path("placeName")))
+                                    .name(actNode.path("title").asText("Hoạt động"))
+                                    .type(activityType(actNode.path("kind").asText()))
+                                    .description(actNode.path("placeName").asText(null))
+                                    .note(actNode.path("notes").asText(null))
+                                    .startTime(periodStart(actNode.path("period").asText()))
+                                    .endTime(periodEnd(actNode.path("period").asText()))
                                     .sortOrder(sortOrder++)
                                     .build();
                             activityRepository.save(activity);
@@ -187,18 +190,6 @@ public class AIProxyService {
                 .findTop10ByConversationIdOrderByCreatedAtDesc(conversation.getId());
         Collections.reverse(history);
 
-        // Build trip context
-        String tripContext = "";
-        if (conversation.getTrip() != null) {
-            Trip t = conversation.getTrip();
-            tripContext = String.format(
-                    "Chuyến đi: %s, điểm đến: %s, từ %s đến %s, %d ngày, ngân sách: %s VND",
-                    t.getName(), t.getDestination(),
-                    t.getStartDate(), t.getEndDate(),
-                    t.getDurationDays(),
-                    t.getBudget() != null ? t.getBudget().toPlainString() : "chưa xác định");
-        }
-
         long start = System.currentTimeMillis();
         try {
             // Build payload for FastAPI
@@ -208,8 +199,17 @@ public class AIProxyService {
 
             Map<String, Object> payload = new HashMap<>();
             payload.put("message", request.message());
-            payload.put("trip_context", tripContext);
-            payload.put("chat_history", historyPayload);
+            payload.put("history", historyPayload);
+            if (conversation.getTrip() != null) {
+                Trip t = conversation.getTrip();
+                Map<String, Object> tripContext = new HashMap<>();
+                tripContext.put("destination", t.getDestination());
+                tripContext.put("startDate", t.getStartDate().toString());
+                tripContext.put("endDate", t.getEndDate().toString());
+                tripContext.put("budgetVnd", t.getBudget() != null ? t.getBudget().longValue() : null);
+                tripContext.put("numPeople", t.getNumPeople());
+                payload.put("tripContext", tripContext);
+            }
 
             String responseJson = webClientBuilder.build()
                     .post()
@@ -223,6 +223,16 @@ public class AIProxyService {
 
             JsonNode resp = objectMapper.readTree(responseJson);
             String reply = resp.path("reply").asText("Xin lỗi, tôi không thể trả lời lúc này.");
+            boolean isOutOfScope = resp.path("isOutOfScope").asBoolean(false);
+            List<String> suggestedQuestions = new ArrayList<>();
+            JsonNode suggestedQuestionsNode = resp.path("suggestedQuestions");
+            if (suggestedQuestionsNode.isArray()) {
+                suggestedQuestionsNode.forEach(question -> {
+                    if (question.isTextual() && !question.asText().isBlank()) {
+                        suggestedQuestions.add(question.asText());
+                    }
+                });
+            }
 
             // Save messages
             ChatMessage userMsg = ChatMessage.builder()
@@ -245,14 +255,14 @@ public class AIProxyService {
                     .build());
 
             return new ChatResponse(
-                    conversation.getId(), aiMsg.getId(), reply, false,
-                    List.of(), aiMsg.getCreatedAt());
+                    conversation.getId(), aiMsg.getId(), reply, isOutOfScope,
+                    suggestedQuestions, aiMsg.getCreatedAt());
 
         } catch (Exception e) {
             log.warn("AI chat failed: {}", e.getMessage());
             // Fallback response
             return new ChatResponse(conversation.getId(), null,
-                    "Xin lỗi, AI đang tạm thời không khả dụng. Vui lòng thử lại sau! 🙏",
+                    "AI đang khởi động hoặc mất kết nối. Vui lòng thử lại sau ít phút.",
                     false, List.of(), LocalDateTime.now());
         }
     }
@@ -263,9 +273,8 @@ public class AIProxyService {
             Map<String, Object> payload = new HashMap<>();
             payload.put("city", request.city());
             payload.put("type", request.type());
-            payload.put("budget", request.budget());
-            payload.put("count", request.count() > 0 ? request.count() : 5);
-            payload.put("special_note", request.specialNote());
+            payload.put("count", request.count() != null ? request.count() : 5);
+            payload.put("specialNote", request.specialNote());
 
             return webClientBuilder.build()
                     .post()
@@ -280,47 +289,6 @@ public class AIProxyService {
             log.warn("AI suggest places failed: {}", e.getMessage());
             throw new AppException("AI_SERVICE_UNAVAILABLE",
                     "Không thể lấy gợi ý lúc này", HttpStatus.SERVICE_UNAVAILABLE);
-        }
-    }
-
-    // ─── OPTIMIZE ──────────────────────────────────────────
-    public String optimizeItinerary(User user, Long tripId) {
-        Trip trip = tripService.getTripAsEditorOrOwner(tripId, user.getId());
-        List<ItineraryDay> days = dayRepository.findAllByTripIdOrderByDayNumberAsc(tripId);
-
-        try {
-            Map<String, Object> payload = new HashMap<>();
-            payload.put("trip_name", trip.getName());
-            payload.put("destination", trip.getDestination());
-            payload.put("days", days.stream().map(d -> {
-                Map<String, Object> dayMap = new HashMap<>();
-                dayMap.put("day_number", d.getDayNumber());
-                dayMap.put("date", d.getDate().toString());
-                dayMap.put("activities", d.getActivities().stream().map(a -> {
-                    Map<String, Object> actMap = new HashMap<>();
-                    actMap.put("id", a.getId());
-                    actMap.put("name", a.getName());
-                    actMap.put("type", a.getType().name());
-                    actMap.put("start_time", a.getStartTime() != null ? a.getStartTime().toString() : null);
-                    actMap.put("place_name", a.getPlace() != null ? a.getPlace().getName() : null);
-                    return actMap;
-                }).toList());
-                return dayMap;
-            }).toList());
-
-            return webClientBuilder.build()
-                    .post()
-                    .uri(aiServiceUrl + "/optimize-itinerary")
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .bodyValue(payload)
-                    .retrieve()
-                    .bodyToMono(String.class)
-                    .timeout(Duration.ofSeconds(25))
-                    .block();
-        } catch (Exception e) {
-            log.warn("AI optimize failed: {}", e.getMessage());
-            throw new AppException("AI_SERVICE_UNAVAILABLE",
-                    "Không thể tối ưu lịch trình lúc này", HttpStatus.SERVICE_UNAVAILABLE);
         }
     }
 
@@ -353,16 +321,36 @@ public class AIProxyService {
     }
 
     // ─── UTILS ─────────────────────────────────────────────
-    private BigDecimal parseDecimal(String value) {
-        if (value == null || value.isBlank()) return null;
-        try { return new BigDecimal(value.replaceAll("[^0-9.]", "")); }
-        catch (Exception e) { return null; }
+    private Place resolvePlace(JsonNode placeNameNode) {
+        if (!placeNameNode.isTextual() || placeNameNode.asText().isBlank()) return null;
+        return placeRepository.findFirstByNameIgnoreCase(placeNameNode.asText()).orElse(null);
     }
 
-    private LocalTime parseTime(String value) {
-        if (value == null || value.isBlank()) return null;
-        try { return LocalTime.parse(value); }
-        catch (DateTimeParseException e) { return null; }
+    private ActivityType activityType(String kind) {
+        return switch (kind) {
+            case "visit" -> ActivityType.SIGHTSEEING;
+            case "meal" -> ActivityType.FOOD;
+            case "travel" -> ActivityType.TRANSPORT;
+            default -> ActivityType.OTHER;
+        };
+    }
+
+    private LocalTime periodStart(String period) {
+        return switch (period) {
+            case "morning" -> LocalTime.of(8, 0);
+            case "afternoon" -> LocalTime.of(14, 0);
+            case "evening" -> LocalTime.of(19, 0);
+            default -> null;
+        };
+    }
+
+    private LocalTime periodEnd(String period) {
+        return switch (period) {
+            case "morning" -> LocalTime.of(11, 0);
+            case "afternoon" -> LocalTime.of(17, 0);
+            case "evening" -> LocalTime.of(21, 0);
+            default -> null;
+        };
     }
 
     // Helper reference for logger in static context
